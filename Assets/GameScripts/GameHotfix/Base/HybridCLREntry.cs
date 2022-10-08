@@ -39,6 +39,7 @@ public class HybridCLREntry
 
     public static void Update()
     {
+        Debug.Log("Update");
         if (!manifestLoadSuccess) return;
         if (isLoadSuccess) return;
 
@@ -51,6 +52,8 @@ public class HybridCLREntry
         }
         isLoadSuccess = true;
         GameHotfixEntry.Awake();
+
+        GameEntry.Huatuo.StopAllCoroutines();
     }
 
     public static void LoadMetadataForAOTAssembly()

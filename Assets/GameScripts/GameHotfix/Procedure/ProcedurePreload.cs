@@ -17,6 +17,10 @@ using UnityEngine;
 
 namespace GameFrame.Hotfix
 {
+    public class PrefabData
+    {
+        public string prefabName;
+    }
     public class ProcedurePreload : ProcedureBase
     {
         private Dictionary<string, bool> m_LoadedFlag = new Dictionary<string, bool>();
@@ -88,6 +92,8 @@ namespace GameFrame.Hotfix
 
             // Preload fonts
             LoadFont("MainFont");
+
+            LoadPreFab("HP Bar");
         }
 
         private void LoadConfig(string configName)
@@ -126,6 +132,14 @@ namespace GameFrame.Hotfix
                 {
                     Log.Error("Can not load font '{0}' from '{1}' with error message '{2}'.", fontName, assetName, errorMessage);
                 }));
+        }
+
+        private void LoadPreFab(string perfabName)
+        {
+            m_LoadedFlag.Add(perfabName, false);
+            PrefabData prefabData = new PrefabData() { prefabName = perfabName };
+            string assetName = AssetUtility.GetPerfabsAsset(perfabName);
+            GameEntry.Resource.LoadAsset(assetName, new LoadAssetCallbacks(OnLoadPerfabAssetSucceed, OnLoadPerfabAssetFailured), prefabData);
         }
 
         private void OnLoadConfigSuccess(object sender, GameEventArgs e)
@@ -195,6 +209,20 @@ namespace GameFrame.Hotfix
             }
 
             Log.Error("Can not load dictionary '{0}' from '{1}' with error message '{2}'.", ne.DictionaryAssetName, ne.DictionaryAssetName, ne.ErrorMessage);
+        }
+
+        private void OnLoadPerfabAssetSucceed(string assetName, object asset, float duration, object userData)
+        {
+            GameObject formPrefab = asset as GameObject;
+            GameObject.Instantiate(formPrefab, GameEntry.Customs);
+            PrefabData prefabData = userData as PrefabData;
+            m_LoadedFlag[prefabData.prefabName] = true;
+            formPrefab = null;
+        }
+
+        private void OnLoadPerfabAssetFailured(string assetName, LoadResourceStatus status, string errorMessage, object userData)
+        {
+            Log.Error("Can not load {0} from '{1}' with error message '{2}'.", assetName, "PerfabsAsset", errorMessage);
         }
     }
 }
