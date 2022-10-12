@@ -16,3 +16,4 @@ MonoBehaviour:
   - mscorlib
   - System
   - System.Core
+  - GameFrame.Main

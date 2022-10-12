@@ -19,7 +19,7 @@ namespace HybridCLR.Builder
             CompileDllCommand.CompileDll(buildTarget);
 
             // Copy Hotfix Dll
-            string hotfixDllSrcDir = SettingsUtil.GetHotFixDllsOutputDirByTarget(buildTarget);//dll 输出路径
+            string hotfixDllSrcDir = SettingsUtil.GetHotUpdateDllsOutputDirByTarget(buildTarget);//dll 输出路径
             string HotfixDllPath = $"{Application.dataPath}/GameMain/HotFixDll";
             foreach (var dll in SettingsUtil.HotUpdateAssemblyFiles)
             {

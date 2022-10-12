@@ -2,14 +2,14 @@
 <UnityGameFramework>
   <ResourceBuilder>
     <Settings>
-      <InternalResourceVersion>4</InternalResourceVersion>
+      <InternalResourceVersion>5</InternalResourceVersion>
       <Platforms>2</Platforms>
       <AssetBundleCompression>1</AssetBundleCompression>
       <CompressionHelperTypeName>UnityGameFramework.Runtime.DefaultCompressionHelper</CompressionHelperTypeName>
       <AdditionalCompressionSelected>True</AdditionalCompressionSelected>
       <ForceRebuildAssetBundleSelected>True</ForceRebuildAssetBundleSelected>
       <BuildEventHandlerTypeName>GameFrame.Editor.GameBuildEventHandler</BuildEventHandlerTypeName>
-      <OutputDirectory>C:/Users/EDY/Desktop/HybridCLR/GameHybridCLR/Build/AssetBundle</OutputDirectory>
+      <OutputDirectory>E:/UnityProject/GameFramework_HybridCLR/Build/AssetBundle</OutputDirectory>
       <OutputPackageSelected>True</OutputPackageSelected>
       <OutputFullSelected>True</OutputFullSelected>
       <OutputPackedSelected>True</OutputPackedSelected>

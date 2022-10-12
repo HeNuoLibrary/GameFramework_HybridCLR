@@ -107,14 +107,6 @@ public class HybridCLREntry
         g2.Foo<ushort>();
     }
 
-    private static void StartGameFramework()
-    {
-        isLoadSuccess = true;
-
-        UnityGameFramework.Runtime.GameEntry.Shutdown(ShutdownType.None);
-        SceneManager.LoadScene("GameFramework");
-    }
-
     public class PrefabData
     {
         public string prefabName;
