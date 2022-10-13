@@ -65,7 +65,6 @@ namespace HybridCLR.Builder
             GUILayout.Space(5f);
             EditorGUILayout.LabelField("Build", EditorStyles.boldLabel);
             EditorGUILayout.BeginVertical("box");
-            GUIItem("由于ab包依赖裁剪后的dll，在编译hotfix.dl前需要build工程。", "EditorBuild", BuildPlayerWindow.ShowBuildPlayerWindow);
             int hotfixPlatformIndex = EditorGUILayout.Popup("选择hotfix平台。", m_HotfixPlatformIndex, PlatformNames);
             if (hotfixPlatformIndex != m_HotfixPlatformIndex)
             {
@@ -74,6 +73,7 @@ namespace HybridCLR.Builder
             GUIItem("编译hotfix.dll。", "Compile", CompileHotfixDll);
             GUIItem("生成打包之前的必要资源,link Aot MethodBridge", "PreBuild", GeneratorPreBuildAsset);
             GUIResourcesTool();
+            GUIItem("由于ab包依赖裁剪后的dll，在编译hotfix.dl前需要build工程。", "EditorBuild", BuildPlayerWindow.ShowBuildPlayerWindow);
             EditorGUILayout.EndVertical();
         }
 

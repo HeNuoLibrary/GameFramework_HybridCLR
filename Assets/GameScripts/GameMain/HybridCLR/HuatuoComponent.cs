@@ -9,6 +9,9 @@ using System.Collections;
 
 namespace GameFrame.Main
 {
+    /// <summary>
+    /// 加载热更脚本Assembly-CSharp.dll
+    /// </summary>
     public class HuatuoComponent : GameFrameworkComponent
     {
         private Assembly gameAss;

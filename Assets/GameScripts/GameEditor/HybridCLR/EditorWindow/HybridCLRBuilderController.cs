@@ -31,10 +31,12 @@ namespace HybridCLR.Builder
 
             // Copy AOT Dll
             string aotDllDir = SettingsUtil.GetAssembliesPostIl2CppStripDir(buildTarget);
-            HotUpdateAssemblyManifest manifest = Resources.Load<HotUpdateAssemblyManifest>("HotUpdateAssemblyManifest");
+            //HotUpdateAssemblyManifest manifest = Resources.Load<HotUpdateAssemblyManifest>("HotUpdateAssemblyManifest");
+            HotUpdateAssemblyManifest manifest = AssetDatabase.LoadAssetAtPath<HotUpdateAssemblyManifest>("Assets/GameMain/HotFixDll/HotUpdateAssemblyManifest.asset");
+
             if (manifest == null)
             {
-                throw new Exception($"resource asset:{nameof(HotUpdateAssemblyManifest)} 配置不存在，请在Resources目录下创建");
+                throw new Exception($"asset:{nameof(HotUpdateAssemblyManifest)} 配置不存在，请在Assets/GameMain/HotFixDll/目录下创建");
             }
             foreach (var dll in manifest.AOTMetadataDlls)
             {
@@ -57,14 +59,7 @@ namespace HybridCLR.Builder
 
         public void GeneratorPreBuildAsset()
         {
-            // 顺序随意
-            ReversePInvokeWrapperGeneratorCommand.GenerateReversePInvokeWrapper();
-            // AOTReferenceGeneratorCommand 涉及到代码生成，必须在MethodBridgeGeneratorCommand之前
-            AOTReferenceGeneratorCommand.GenerateAOTGenericReference();
-            MethodBridgeGeneratorCommand.GenerateMethodBridge();
-            // 顺序随意，只要保证 GenerateLinkXml之前有调用过CompileDll即可
-            LinkGeneratorCommand.GenerateLinkXml(false);
-
+            PrebuildCommand.GenerateAll();
             AssetDatabase.Refresh();
             Debug.Log("GeneratorPreBuildAsset complete.");
         }

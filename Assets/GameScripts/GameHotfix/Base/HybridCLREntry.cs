@@ -1,25 +1,20 @@
-﻿using HybridCLR;
-using System;
-using System.Collections;
+﻿using GameEntry = GameFrame.Main.GameEntry;
 using System.Collections.Generic;
-using UnityEngine;
+using UnityGameFramework.Runtime;
 using Debug = UnityEngine.Debug;
 using GameFramework.Resource;
-using UnityGameFramework.Runtime;
-using UnityEngine.SceneManagement;
-using GameEntry = GameFrame.Main.GameEntry;
-using GameFrame.Main;
 using GameFrame.Hotfix;
-
-struct MyValue
-{
-    public int x;
-    public float y;
-    public string s;
-}
+using GameFrame.Main;
+using UnityEngine;
+using HybridCLR;
+using System;
 
 public class HybridCLREntry
 {
+    public class PrefabData
+    {
+        public string prefabName;
+    }
     //热更新程序
     private static Dictionary<string, byte[]> m_loadedHotifx = new Dictionary<string, byte[]>();
     private static Dictionary<string, bool> m_LoadedFlag = new Dictionary<string, bool>();
@@ -58,13 +53,63 @@ public class HybridCLREntry
 
     public static void LoadMetadataForAOTAssembly()
     {
-        HotUpdateAssemblyManifest hotUpdateAssemblyManifest = Resources.Load<HotUpdateAssemblyManifest>("HotUpdateAssemblyManifest");
+        #region 放弃从Resources中加载  改从ab中加载Manifest
+        //HotUpdateAssemblyManifest hotUpdateAssemblyManifest = Resources.Load<HotUpdateAssemblyManifest>("HotUpdateAssemblyManifest");
+        //foreach (var aotDllName in hotUpdateAssemblyManifest.AOTMetadataDlls)
+        //{
+        //    LoadAOTDll(aotDllName);
+        //}
+
+        //manifestLoadSuccess = true;
+        #endregion
+        LoadAOTDllManifest();
+    }
+
+    private static void LoadAOTDllManifest()
+    {
+        string manifest = "Assets/GameMain/HotFixDll/HotUpdateAssemblyManifest.asset";
+        PrefabData prefabData = new PrefabData() { prefabName = manifest };
+        string assetName = AssetUtility.GetHotDllAsset(manifest);
+        GameEntry.Resource.LoadAsset(assetName, new LoadAssetCallbacks(OnLoadOTDllManifestSuccess, OnLoadAOTFailured), prefabData);
+    }
+
+    private static void LoadAOTDll(string aotName)
+    {
+        m_LoadedFlag.Add(aotName, false);
+        PrefabData prefabData = new PrefabData() { prefabName = aotName };
+        string assetName = AssetUtility.GetHotDllAsset(aotName);
+        GameEntry.Resource.LoadAsset(assetName, new LoadAssetCallbacks(OnLoadAOTDllSuccess, OnLoadAOTFailured), prefabData);
+    }
+
+    private static unsafe void OnLoadAOTDllSuccess(string assetName, object asset, float duration, object userData)
+    {
+        PrefabData prefabData = userData as PrefabData;
+        m_LoadedFlag[prefabData.prefabName] = true;
+
+        byte[] dllBytes = ((TextAsset)asset).bytes;
+        fixed (byte* ptr = dllBytes)
+        {
+            // 加载assembly对应的dll，会自动为它hook。一旦aot泛型函数的native函数不存在，用解释器版本代码
+            LoadImageErrorCode err = (LoadImageErrorCode)RuntimeApi.LoadMetadataForAOTAssembly((IntPtr)ptr, dllBytes.Length);
+            Debug.Log($"LoadMetadataForAOTAssembly:{prefabData.prefabName}. ret:{err}");
+        }
+    }
+
+    private static void OnLoadOTDllManifestSuccess(string assetName, object asset, float duration, object userData)
+    {
+        HotUpdateAssemblyManifest hotUpdateAssemblyManifest = asset as HotUpdateAssemblyManifest;
+
         foreach (var aotDllName in hotUpdateAssemblyManifest.AOTMetadataDlls)
         {
             LoadAOTDll(aotDllName);
         }
 
         manifestLoadSuccess = true;
+    }
+
+    private static void OnLoadAOTFailured(string assetName, LoadResourceStatus status, string errorMessage, object userData)
+    {
+        Log.Error("Can not load {0} from '{1}' with error message '{2}'.", assetName, "AOTbsAsset", errorMessage);
     }
 
     ///// <summary>
@@ -94,61 +139,4 @@ public class HybridCLREntry
     //        }
     //    }
     //}
-
-    private static void TestRefAOTGenericTypeAndMethods()
-    {
-        new Dictionary<int, List<string>>();
-        var o = (object)new ValueTuple<int, float, string>();
-        Array.Empty<Vector2>();
-
-        var g1 = new GenericType<float>();
-        g1.Foo<ulong>();
-        var g2 = new GenericType<double>();
-        g2.Foo<ushort>();
-    }
-
-    public class PrefabData
-    {
-        public string prefabName;
-    }
-
-    private static unsafe void LoadAOTDll(string aotName)
-    {
-        m_LoadedFlag.Add(aotName, false);
-        PrefabData prefabData = new PrefabData() { prefabName = aotName };
-        string assetName = AssetUtility.GetHotDllAsset(aotName);
-        GameEntry.Resource.LoadAsset(assetName, new LoadAssetCallbacks(OnLoadAOTDllSuccess, OnLoadAOTFailured), prefabData);
-    }
-
-    private static unsafe void OnLoadAOTDllSuccess(string assetName, object asset, float duration, object userData)
-    {
-        PrefabData prefabData = userData as PrefabData;
-        m_LoadedFlag[prefabData.prefabName] = true;
-
-        byte[] dllBytes = ((TextAsset)asset).bytes;
-        fixed (byte* ptr = dllBytes)
-        {
-            // 加载assembly对应的dll，会自动为它hook。一旦aot泛型函数的native函数不存在，用解释器版本代码
-            LoadImageErrorCode err = (LoadImageErrorCode)RuntimeApi.LoadMetadataForAOTAssembly((IntPtr)ptr, dllBytes.Length);
-            Debug.Log($"LoadMetadataForAOTAssembly:{prefabData.prefabName}. ret:{err}");
-        }
-    }
-
-    private static void OnLoadAOTFailured(string assetName, LoadResourceStatus status, string errorMessage, object userData)
-    {
-        Log.Error("Can not load {0} from '{1}' with error message '{2}'.", assetName, "AOTbsAsset", errorMessage);
-    }
-}
-
-public class GenericType<T>
-{
-    public void Show()
-    {
-        new Queue<T>();
-    }
-
-    public void Foo<U>()
-    {
-        new Dictionary<Vector3, U>();
-    }
 }
