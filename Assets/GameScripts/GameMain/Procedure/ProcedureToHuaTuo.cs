@@ -27,7 +27,7 @@ namespace GameFrame.Main
 
             Log.Info("<color=green> ProcedureToHuaTuo </color>");
 
-            GameEntry.Huatuo.LoadHotfix();
+            GameEntry.Huatuo.LoadAOTDllManifestToStart();
         }
     }
 }

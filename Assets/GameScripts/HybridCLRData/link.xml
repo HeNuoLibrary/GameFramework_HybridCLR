@@ -52,7 +52,6 @@
     <type fullname="GameFrame.Main.DataTable" preserve="all" />
     <type fullname="GameFrame.Main.DialogParams" preserve="all" />
     <type fullname="GameFrame.Main.GameEntry" preserve="all" />
-    <type fullname="GameFrame.Main.HuatuoComponent" preserve="all" />
     <type fullname="GameFrame.Main.MessagePacketConverter" preserve="all" />
     <type fullname="GameFrame.Main.PacketBase" preserve="all" />
     <type fullname="GameFrame.Main.PacketHandlerBase" preserve="all" />
@@ -61,7 +60,6 @@
     <type fullname="GameFrame.Main.ProcedureBase" preserve="all" />
     <type fullname="GameFrame.Main.SCPacketBase" preserve="all" />
     <type fullname="GameFrame.Main.SCPacketHeader" preserve="all" />
-    <type fullname="HotUpdateAssemblyManifest" preserve="all" />
   </assembly>
   <assembly fullname="GameFramework">
     <type fullname="GameFramework.BaseEventArgs" preserve="all" />
@@ -101,10 +99,6 @@
     <type fullname="GameFramework.Utility/Text" preserve="all" />
     <type fullname="GameFramework.Variable`1" preserve="all" />
   </assembly>
-  <assembly fullname="HybridCLR.Runtime">
-    <type fullname="HybridCLR.LoadImageErrorCode" preserve="all" />
-    <type fullname="HybridCLR.RuntimeApi" preserve="all" />
-  </assembly>
   <assembly fullname="mscorlib">
     <type fullname="System.Action`1" preserve="all" />
     <type fullname="System.Action`4" preserve="all" />
@@ -131,7 +125,6 @@
     <type fullname="System.EventHandler`1" preserve="all" />
     <type fullname="System.IDisposable" preserve="all" />
     <type fullname="System.Int32" preserve="all" />
-    <type fullname="System.IntPtr" preserve="all" />
     <type fullname="System.IO.BinaryReader" preserve="all" />
     <type fullname="System.IO.MemoryStream" preserve="all" />
     <type fullname="System.IO.Stream" preserve="all" />
@@ -161,7 +154,6 @@
     <type fullname="ProtoBuf.ProtoContractAttribute" preserve="all" />
   </assembly>
   <assembly fullname="System">
-    <type fullname="System.Collections.Generic.Queue`1" preserve="all" />
     <type fullname="System.Net.EndPoint" preserve="all" />
     <type fullname="System.Net.IPAddress" preserve="all" />
     <type fullname="System.Net.Sockets.Socket" preserve="all" />
@@ -242,13 +234,11 @@
     <type fullname="UnityEngine.Renderer" preserve="all" />
     <type fullname="UnityEngine.Resources" preserve="all" />
     <type fullname="UnityEngine.RuntimePlatform" preserve="all" />
-    <type fullname="UnityEngine.SceneManagement.SceneManager" preserve="all" />
     <type fullname="UnityEngine.Screen" preserve="all" />
     <type fullname="UnityEngine.SerializeField" preserve="all" />
     <type fullname="UnityEngine.Shader" preserve="all" />
     <type fullname="UnityEngine.Space" preserve="all" />
     <type fullname="UnityEngine.SpriteRenderer" preserve="all" />
-    <type fullname="UnityEngine.TextAsset" preserve="all" />
     <type fullname="UnityEngine.Time" preserve="all" />
     <type fullname="UnityEngine.Transform" preserve="all" />
     <type fullname="UnityEngine.Vector2" preserve="all" />

@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enable: 1
-  useGlobalIl2cpp: 1
+  useGlobalIl2cpp: 0
   cloneFromGitee: 1
   hotUpdateAssemblyDefinitions: []
   hotUpdateAssemblies:
