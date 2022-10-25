@@ -13,6 +13,8 @@
 # HuatuoData
 /[Hh]ybridCLRData/[Aa]ssembliesPostIl2CppStrip/
 /[Hh]ybridCLRData/[Hh]otFixDlls/
+/[Hh]ybridCLRData/[Hh]otUpdateDlls/
+/[Hh]ybridCLRData/[Ll]ocalIl2CppData-WindowsEditor
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
