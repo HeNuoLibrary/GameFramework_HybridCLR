@@ -38,7 +38,7 @@
 #define HYBRIDCLR_TARGET_ARM64 1
 #elif IL2CPP_TARGET_ARMV7
 #define HYBRIDCLR_TARGET_ARMV7 1
-#elif IL2CPP_TARGET_WINDOWS || IL2CPP_TARGET_DARWIN || IL2CPP_TARGET_LINUX
+#elif IL2CPP_TARGET_WINDOWS || IL2CPP_TARGET_DARWIN || IL2CPP_TARGET_LINUX || IL2CPP_TARGET_ANDROID
 #if PLATFORM_ARCH_64
 #define HYBRIDCLR_TARGET_X64 1
 #else
@@ -54,18 +54,19 @@
 #define HYBRIDCLR_ARCH_64 1
 #if IL2CPP_TARGET_ARM64
 #define HYBRIDCLR_ABI_ARM_64 1
-#define HYBRIDCLR_ABI_UNIVERSAL_64 0
 #define HYBRIDCLR_ABI_NAME "Arm64"
 #else
 #define HYBRIDCLR_ABI_UNIVERSAL_64 1
 #define HYBRIDCLR_ABI_NAME "General64"
 #endif
-#define HYBRIDCLR_ABI_UNIVERSAL_32 0
 #else
-#define HYBRIDCLR_ARCH_64 0
-#define HYBRIDCLR_ABI_UNIVERSAL_64 0
+#if IL2CPP_TARGET_JAVASCRIPT
+#define HYBRIDCLR_ABI_WEBGL32 1
+#define HYBRIDCLR_ABI_NAME "WebGL32"
+#else
 #define HYBRIDCLR_ABI_UNIVERSAL_32 1
 #define HYBRIDCLR_ABI_NAME "General32"
+#endif
 #endif
 
 #define PTR_SIZE IL2CPP_SIZEOF_VOID_P
@@ -75,6 +76,26 @@
 #ifndef ENABLE_PLACEHOLDER_DLL
 #define ENABLE_PLACEHOLDER_DLL 1
 #endif
+
+namespace hybridclr
+{
+
+	Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointerSlow(MethodInfo* method);
+
+	inline Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointer(const MethodInfo* method)
+	{
+		Il2CppMethodPointer methodPointer = method->methodPointerCallByInterp;
+		if (methodPointer)
+		{
+			return methodPointer;
+		}
+		if (method->initInterpCallMethodPointer)
+		{
+			return methodPointer;
+		}
+		return InitAndGetInterpreterDirectlyCallMethodPointerSlow(const_cast<MethodInfo*>(method));
+	}
+}
 
 #if HYBRIDCLR_UNITY_2019 || HYBRIDCLR_UNITY_2020
 
@@ -113,18 +134,6 @@ inline void COPY_IL2CPPTYPE_VALUE_TYPE_FLAG(Il2CppType& dst, const Il2CppType& s
 
 namespace hybridclr
 {
-	Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointerSlow(MethodInfo* method);
-
-	inline Il2CppMethodPointer GetInterpreterDirectlyCallMethodPointer(const MethodInfo* method)
-	{
-		Il2CppMethodPointer methodPointer = method->methodPointer;
-		if (methodPointer || method->initInterpCallMethodPointer)
-		{
-			return methodPointer;
-		}
-		return InitAndGetInterpreterDirectlyCallMethodPointerSlow(const_cast<MethodInfo*>(method));
-	}
-
 	inline Il2CppReflectionType* GetReflectionTypeFromName(Il2CppString* name)
 	{
 		return il2cpp::icalls::mscorlib::System::Type::internal_from_name(name, true, false);
@@ -132,7 +141,7 @@ namespace hybridclr
 
 	inline void ConstructDelegate(Il2CppDelegate* delegate, Il2CppObject* target, const MethodInfo* method)
 	{
-		il2cpp::vm::Type::ConstructDelegate(delegate, target, GetInterpreterDirectlyCallMethodPointer(method), method);
+		il2cpp::vm::Type::ConstructDelegate(delegate, target, InitAndGetInterpreterDirectlyCallMethodPointer(method), method);
 	}
 
 	inline const MethodInfo* GetGenericVirtualMethod(const MethodInfo* result, const MethodInfo* inflateMethod)
@@ -195,17 +204,6 @@ inline void COPY_IL2CPPTYPE_VALUE_TYPE_FLAG(Il2CppType& dst, const Il2CppType& s
 
 namespace hybridclr
 {
-	Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointerSlow(MethodInfo* method);
-
-	inline Il2CppMethodPointer GetInterpreterDirectlyCallMethodPointer(const MethodInfo* method)
-	{
-		Il2CppMethodPointer methodPointer = method->indirect_call_via_invokers ? method->interpCallMethodPointer : method->methodPointer;
-		if (methodPointer || method->initInterpCallMethodPointer)
-		{
-			return methodPointer;
-		}
-		return InitAndGetInterpreterDirectlyCallMethodPointerSlow(const_cast<MethodInfo*>(method));
-	}
 
 	inline Il2CppReflectionType* GetReflectionTypeFromName(Il2CppString* name)
 	{
@@ -214,7 +212,10 @@ namespace hybridclr
 
 	inline void ConstructDelegate(Il2CppDelegate* delegate, Il2CppObject* target, const MethodInfo* method)
 	{
-		il2cpp::vm::Type::InvokeDelegateConstructor(delegate, target, method);
+		delegate->target = target;
+		delegate->method = method;
+		delegate->invoke_impl = InitAndGetInterpreterDirectlyCallMethodPointer(method);
+		delegate->invoke_impl_this = target;
 	}
 
 	inline const MethodInfo* GetGenericVirtualMethod(const MethodInfo* result, const MethodInfo* inflateMethod)

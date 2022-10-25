@@ -63,13 +63,7 @@ namespace interpreter
 
 		StackObject* AllocArgments(int32_t argCount)
 		{
-			if (_stackTopIdx + argCount > _stackSize)
-			{
-				il2cpp::vm::Exception::Raise(il2cpp::vm::Exception::GetStackOverflowException("AllocArguments"));
-			}
-			StackObject* args = _stackBase + _stackTopIdx;
-			_stackTopIdx += argCount;
-			return args;
+			return AllocStackSlot(argCount);
 		}
 
 		StackObject* GetStackBasePtr() const
@@ -263,6 +257,9 @@ namespace interpreter
 
 		InterpFrame* EnterFrameFromInterpreter(const InterpMethodInfo* imi, StackObject* argBase)
 		{
+#if IL2CPP_ENABLE_PROFILER
+			il2cpp_codegen_profiler_method_enter(imi->method);
+#endif
 			int32_t oldStackTop = _machineState.GetStackTop();
 			StackObject* stackBasePtr = _machineState.AllocStackSlot(imi->maxStackSize - imi->argStackObjectSize);
 			InterpFrame* newFrame = _machineState.PushFrame();
@@ -274,6 +271,9 @@ namespace interpreter
 
 		InterpFrame* EnterFrameFromNative(const InterpMethodInfo* imi, StackObject* argBase)
 		{
+#if IL2CPP_ENABLE_PROFILER
+			il2cpp_codegen_profiler_method_enter(imi->method);
+#endif
 			int32_t oldStackTop = _machineState.GetStackTop();
 			StackObject* stackBasePtr = _machineState.AllocStackSlot(imi->maxStackSize);
 			InterpFrame* newFrame = _machineState.PushFrame();
@@ -301,6 +301,9 @@ namespace interpreter
 			IL2CPP_ASSERT(_machineState.GetFrameTopIdx() > _frameBaseIdx);
 			POP_STACK_FRAME();
 			InterpFrame* frame = _machineState.GetTopFrame();
+#if IL2CPP_ENABLE_PROFILER
+			il2cpp_codegen_profiler_method_exit(frame->method->method);
+#endif
 			if (frame->exFlowBase)
 			{
 				_machineState.SetExceptionFlowTop(frame->exFlowBase);
@@ -324,6 +327,28 @@ namespace interpreter
 		MachineState& _machineState;
 		int32_t _stackBaseIdx;
 		uint32_t _frameBaseIdx;
+	};
+
+	class StackObjectAllocScope
+	{
+	private:
+		MachineState& _state;
+		const int32_t _originStackTop;
+		const int32_t _count;
+		StackObject* _data;
+	public:
+		StackObjectAllocScope(MachineState& state, int32_t count) : _state(state), _count(count), _originStackTop(_state.GetStackTop())
+		{
+			_data = state.AllocStackSlot(count);
+		}
+
+		~StackObjectAllocScope()
+		{
+			IL2CPP_ASSERT(_state.GetStackTop() > _originStackTop);
+			_state.SetStackTop(_originStackTop);
+		}
+
+		StackObject* GetData() const { return _data; }
 	};
 }
 }

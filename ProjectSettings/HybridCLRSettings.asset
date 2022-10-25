@@ -18,8 +18,12 @@ MonoBehaviour:
   hotUpdateAssemblyDefinitions: []
   hotUpdateAssemblies:
   - Assembly-CSharp
+  preserveHotUpdateAssemblies: []
+  hotUpdateDllCompileOutputRootDir: HybridCLRData/HotUpdateDlls
+  strippedAOTDllOutputRootDir: HybridCLRData/AssembliesPostIl2CppStrip
+  patchAOTAssemblies: []
+  collectAssetReferenceTypes: 0
   outputLinkFile: GameScripts/HybridCLRData/link.xml
   outputAOTGenericReferenceFile: GameScripts/HybridCLRData/AOTGenericReferences.cs
   maxGenericReferenceIteration: 4
-  ReversePInvokeWrapperCount: 10
   maxMethodBridgeGenericIteration: 4

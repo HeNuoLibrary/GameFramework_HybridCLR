@@ -234,7 +234,14 @@ namespace metadata
 		{
 			Il2CppClass* klass = method->klass;
 			Il2CppClass* parent = klass->parent;
-			return parent != il2cpp_defaults.multicastdelegate_class && parent != il2cpp_defaults.delegate_class && AOTHomologousImage::FindImageByAssembly(klass->image->assembly);
+			if (parent != il2cpp_defaults.multicastdelegate_class && parent != il2cpp_defaults.delegate_class)
+			{
+				return AOTHomologousImage::FindImageByAssembly(klass->image->assembly);
+			}
+			else
+			{
+				return strcmp(method->name, "Invoke") == 0;
+			}
 		}
 
 		static Il2CppMethodPointer GetReversePInvokeWrapper(const Il2CppImage* image, const MethodInfo* method);
@@ -258,10 +265,10 @@ namespace metadata
 	private:
 		static void InitReversePInvokeInfo();
 
+		static std::unordered_map<const char*, int32_t, CStringHash, CStringEqualTo> s_methodSig2Indexs;
 		static std::unordered_map<const MethodInfo*, const ReversePInvokeInfo*> s_methodInfo2ReverseInfos;
 		static std::unordered_map<Il2CppMethodPointer, const ReversePInvokeInfo*> s_methodPointer2ReverseInfos;
 		static std::vector<ReversePInvokeInfo> s_reverseInfos;
-		static size_t s_nextMethodIndex;
 	};
 }
 

@@ -694,20 +694,9 @@ else \
 					continue;
 				}
 
-				if (!GetInterpreterDirectlyCallMethodPointer(shareMethod))
+				if (!InitAndGetInterpreterDirectlyCallMethodPointer(shareMethod))
 				{
 					RaiseAOTGenericMethodNotInstantiatedException(shareMethod);
-				}
-
-				if (resolvedIsInstanceMethod)
-				{
-#if VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
-					if (IS_CLASS_VALUE_TYPE(shareMethod->klass))
-					{
-						CreateAddIR(ir, AdjustValueTypeRefVar);
-						ir->data = ctx.GetEvalStackOffset(callArgEvalStackIdxBase);
-					}
-#endif
 				}
 
 				if (ctx.TryAddCallCommonInstruments(shareMethod, methodDataIndex))
@@ -789,7 +778,7 @@ else \
 				int32_t callArgEvalStackIdxBase = evalStackTop - resolvedTotalArgNum;
 				uint32_t methodDataIndex = GetOrAddResolveDataIndex(ptr2DataIdxs, resolveDatas, shareMethod);
 
-				bool isMultiDelegate = IsMulticastDelegate(shareMethod);
+				bool isMultiDelegate = IsChildTypeOfMulticastDelegate(shareMethod->klass);
 				if (!isMultiDelegate && IsInterpreterMethod(shareMethod))
 				{
 					ctx.PopStackN(resolvedTotalArgNum);
@@ -843,73 +832,113 @@ else \
 				{
 					retIdx = -1;
 				}
-				if (!isMultiDelegate)
+				if (isMultiDelegate)
 				{
-					if (retIdx < 0)
+					if (std::strcmp(shareMethod->name, "Invoke") == 0)
 					{
-						CreateAddIR(ir, CallVirtual_void);
-						ir->managed2NativeMethod = managed2NativeMethodDataIdx;
-						ir->methodInfo = methodDataIndex;
-						ir->argIdxs = argIdxDataIndex;
-					}
-					else
-					{
-						interpreter::LocationDataType locDataType = GetLocationDataTypeByType(returnType);
-						if (IsNeedExpandLocationType(locDataType))
+						Managed2NativeCallMethod staticManaged2NativeMethod = InterpreterModule::GetManaged2NativeMethodPointer(shareMethod, true);
+						IL2CPP_ASSERT(staticManaged2NativeMethod);
+						uint32_t staticManaged2NativeMethodDataIdx = GetOrAddResolveDataIndex(ptr2DataIdxs, resolveDatas, (void*)staticManaged2NativeMethod);
+						if (retIdx < 0)
 						{
-							CreateAddIR(ir, CallVirtual_ret_expand);
-							ir->managed2NativeMethod = managed2NativeMethodDataIdx;
-							ir->methodInfo = methodDataIndex;
+							CreateAddIR(ir, CallDelegateInvoke_void);
+							ir->managed2NativeStaticMethod = staticManaged2NativeMethodDataIdx;
+							ir->managed2NativeInstanceMethod = managed2NativeMethodDataIdx;
 							ir->argIdxs = argIdxDataIndex;
-							ir->ret = retIdx;
-							ir->retLocationType = (uint8_t)locDataType;
+							ir->invokeParamCount = shareMethod->parameters_count;
 						}
 						else
 						{
-							CreateAddIR(ir, CallVirtual_ret);
-							ir->managed2NativeMethod = managed2NativeMethodDataIdx;
+							interpreter::ArgDesc retDesc = GetTypeArgDesc(returnType);
+							if (retDesc.stackObjectSize > kMaxRetValueTypeStackObjectSize)
+							{
+								std::string methodName = GetMethodNameWithSignature(shareMethod);
+								TEMP_FORMAT(errMsg, " return type size of method:%s is %d, excced kMaxRetValueTypeStackObjectSize:%d", methodName.c_str(), retDesc.stackObjectSize, kMaxRetValueTypeStackObjectSize);
+								il2cpp::vm::Exception::Raise(il2cpp::vm::Exception::GetExecutionEngineException(errMsg));
+							}
+							if (IsNeedExpandLocationType(retDesc.type))
+							{
+								CreateAddIR(ir, CallDelegateInvoke_ret_expand);
+								ir->managed2NativeStaticMethod = staticManaged2NativeMethodDataIdx;
+								ir->managed2NativeInstanceMethod = managed2NativeMethodDataIdx;
+								ir->argIdxs = argIdxDataIndex;
+								ir->ret = retIdx;
+								ir->invokeParamCount = shareMethod->parameters_count;
+								ir->retLocationType = (uint8_t)retDesc.type;
+							}
+							else
+							{
+								CreateAddIR(ir, CallDelegateInvoke_ret);
+								ir->managed2NativeStaticMethod = staticManaged2NativeMethodDataIdx;
+								ir->managed2NativeInstanceMethod = managed2NativeMethodDataIdx;
+								ir->argIdxs = argIdxDataIndex;
+								ir->ret = retIdx;
+								ir->retTypeStackObjectSize = retDesc.stackObjectSize;
+								ir->invokeParamCount = shareMethod->parameters_count;
+							}
+						}
+						continue;
+					}
+					Il2CppMethodPointer directlyCallMethodPointer = InitAndGetInterpreterDirectlyCallMethodPointer(shareMethod);
+					if (std::strcmp(shareMethod->name, "BeginInvoke") == 0)
+					{
+						if (IsInterpreterMethod(shareMethod) || directlyCallMethodPointer == nullptr)
+						{
+							CreateAddIR(ir, CallDelegateBeginInvoke);
 							ir->methodInfo = methodDataIndex;
+							ir->result = retIdx;
 							ir->argIdxs = argIdxDataIndex;
-							ir->ret = retIdx;
+							continue;
+						}
+					}
+					else if (std::strcmp(shareMethod->name, "EndInvoke") == 0)
+					{
+						if (IsInterpreterMethod(shareMethod) || directlyCallMethodPointer == nullptr)
+						{
+							if (retIdx < 0)
+							{
+								CreateAddIR(ir, CallDelegateEndInvoke_void);
+								ir->methodInfo = methodDataIndex;
+								ir->asyncResult = __argIdxs[1];
+							}
+							else
+							{
+								CreateAddIR(ir, CallDelegateEndInvoke_ret);
+								ir->methodInfo = methodDataIndex;
+								ir->asyncResult = __argIdxs[1];
+								ir->ret = retIdx;
+							}
+							continue;
 						}
 					}
 				}
+
+				if (retIdx < 0)
+				{
+					CreateAddIR(ir, CallVirtual_void);
+					ir->managed2NativeMethod = managed2NativeMethodDataIdx;
+					ir->methodInfo = methodDataIndex;
+					ir->argIdxs = argIdxDataIndex;
+				}
 				else
 				{
-
-					Managed2NativeCallMethod staticManaged2NativeMethod = InterpreterModule::GetManaged2NativeMethodPointer(shareMethod, true);
-					IL2CPP_ASSERT(staticManaged2NativeMethod);
-					uint32_t staticManaged2NativeMethodDataIdx = GetOrAddResolveDataIndex(ptr2DataIdxs, resolveDatas, (void*)staticManaged2NativeMethod);
-					if (retIdx < 0)
+					interpreter::LocationDataType locDataType = GetLocationDataTypeByType(returnType);
+					if (IsNeedExpandLocationType(locDataType))
 					{
-						CreateAddIR(ir, CallDelegate_void);
-						ir->managed2NativeStaticMethod = staticManaged2NativeMethodDataIdx;
-						ir->managed2NativeInstanceMethod = managed2NativeMethodDataIdx;
+						CreateAddIR(ir, CallVirtual_ret_expand);
+						ir->managed2NativeMethod = managed2NativeMethodDataIdx;
+						ir->methodInfo = methodDataIndex;
 						ir->argIdxs = argIdxDataIndex;
-						ir->invokeParamCount = shareMethod->parameters_count;
+						ir->ret = retIdx;
+						ir->retLocationType = (uint8_t)locDataType;
 					}
 					else
 					{
-						interpreter::LocationDataType locDataType = GetLocationDataTypeByType(returnType);
-						if (IsNeedExpandLocationType(locDataType))
-						{
-							CreateAddIR(ir, CallDelegate_ret_expand);
-							ir->managed2NativeStaticMethod = staticManaged2NativeMethodDataIdx;
-							ir->managed2NativeInstanceMethod = managed2NativeMethodDataIdx;
-							ir->argIdxs = argIdxDataIndex;
-							ir->ret = retIdx;
-							ir->invokeParamCount = shareMethod->parameters_count;
-							ir->retLocationType = (uint8_t)locDataType;
-						}
-						else
-						{
-							CreateAddIR(ir, CallDelegate_ret);
-							ir->managed2NativeStaticMethod = staticManaged2NativeMethodDataIdx;
-							ir->managed2NativeInstanceMethod = managed2NativeMethodDataIdx;
-							ir->argIdxs = argIdxDataIndex;
-							ir->ret = retIdx;
-							ir->invokeParamCount = shareMethod->parameters_count;
-						}
+						CreateAddIR(ir, CallVirtual_ret);
+						ir->managed2NativeMethod = managed2NativeMethodDataIdx;
+						ir->methodInfo = methodDataIndex;
+						ir->argIdxs = argIdxDataIndex;
+						ir->ret = retIdx;
 					}
 				}
 				continue;
@@ -1865,19 +1894,37 @@ else \
 					}
 				}
 
-				if (IsMulticastDelegate(shareMethod))
+				if (IsChildTypeOfMulticastDelegate(shareMethod->klass))
 				{
 					IL2CPP_ASSERT(evalStackTop >= 2);
+#if HYBRIDCLR_UNITY_2021_OR_NEW
+					const MethodInfo* ctor = il2cpp::vm::Class::GetMethodFromName(shareMethod->klass, ".ctor", 2);
+					if (ctor && ctor->methodPointer && !ctor->isInterpterImpl)
+					{
+						CreateAddIR(ir, CtorDelegate);
+						ir->dst = ir->obj = ctx.GetEvalStackOffset_2();
+						ir->ctor = GetOrAddResolveDataIndex(ptr2DataIdxs, resolveDatas, ctor);
+						ir->method = ctx.GetEvalStackOffset_1();
+					}
+					else
+					{
+						CreateAddIR(ir, NewDelegate);
+						ir->dst = ir->obj = ctx.GetEvalStackOffset_2();
+						ir->klass = GetOrAddResolveDataIndex(ptr2DataIdxs, resolveDatas, klass);
+						ir->method = ctx.GetEvalStackOffset_1();
+					}
+#else
 					CreateAddIR(ir, NewDelegate);
 					ir->dst = ir->obj = ctx.GetEvalStackOffset_2();
 					ir->klass = GetOrAddResolveDataIndex(ptr2DataIdxs, resolveDatas, klass);
 					ir->method = ctx.GetEvalStackOffset_1();
+#endif
 					ctx.PopStackN(2);
 					ctx.PushStackByReduceType(NATIVE_INT_REDUCE_TYPE);
 					continue;
 				}
 
-				if (!GetInterpreterDirectlyCallMethodPointer(shareMethod))
+				if (!InitAndGetInterpreterDirectlyCallMethodPointer(shareMethod))
 				{
 					RaiseAOTGenericMethodNotInstantiatedException(shareMethod);
 				}

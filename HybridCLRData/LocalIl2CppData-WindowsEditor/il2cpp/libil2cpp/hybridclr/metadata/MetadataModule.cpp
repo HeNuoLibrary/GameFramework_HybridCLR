@@ -25,46 +25,32 @@ using namespace il2cpp;
 
 namespace hybridclr
 {
-    Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointerSlow(MethodInfo* method)
-    {
-        IL2CPP_ASSERT(!method->initInterpCallMethodPointer);
-        method->initInterpCallMethodPointer = true;
-#if HYBRIDCLR_UNITY_2021_OR_NEW
-        if (hybridclr::metadata::MetadataModule::IsImplementedByInterpreter(method))
-        {
-            method->interpCallMethodPointer = hybridclr::interpreter::InterpreterModule::GetMethodPointer(method);
-            method->isInterpterImpl = true;
-        }
-        return method->interpCallMethodPointer;
-#else
-        if (hybridclr::metadata::MetadataModule::IsImplementedByInterpreter(method))
-        {
-            method->methodPointer = method->klass->valuetype && hybridclr::metadata::IsInstanceMethod(method) ?
-                hybridclr::interpreter::InterpreterModule::GetAdjustThunkMethodPointer(method)
-                : hybridclr::interpreter::InterpreterModule::GetMethodPointer(method);
-            method->invoker_method = hybridclr::interpreter::InterpreterModule::GetMethodInvoker(method);
-            method->isInterpterImpl = true;
-        }
-        return method->methodPointer;
-#endif
-    }
 
 namespace metadata
 {
 
     std::unordered_map<const MethodInfo*, const ReversePInvokeInfo*> MetadataModule::s_methodInfo2ReverseInfos;
     std::unordered_map<Il2CppMethodPointer, const ReversePInvokeInfo*> MetadataModule::s_methodPointer2ReverseInfos;
+    std::unordered_map<const char*, int32_t, CStringHash, CStringEqualTo> MetadataModule::s_methodSig2Indexs;
     std::vector<ReversePInvokeInfo> MetadataModule::s_reverseInfos;
-    size_t MetadataModule::s_nextMethodIndex;
 
     static baselib::ReentrantLock g_reversePInvokeMethodLock;
 
     void MetadataModule::InitReversePInvokeInfo()
     {
-        s_nextMethodIndex = 0;
-        for (int32_t i = 0; s_ReversePInvokeMethodStub[i]; i++)
+        for (int32_t i = 0; ; i++)
         {
-            s_reverseInfos.push_back({ i, s_ReversePInvokeMethodStub[i], nullptr });
+            ReversePInvokeMethodData& data = g_reversePInvokeMethodStub[i];
+            if (data.methodPointer == nullptr)
+            {
+                break;
+            }
+            s_reverseInfos.push_back({ i, data.methodPointer, nullptr });
+            auto it = s_methodSig2Indexs.find(data.methodSig);
+            if (it == s_methodSig2Indexs.end())
+            {
+                s_methodSig2Indexs.insert({ data.methodSig, i });
+            }
         }
         s_methodInfo2ReverseInfos.reserve(s_reverseInfos.size() * 2);
         s_methodPointer2ReverseInfos.reserve(s_reverseInfos.size() * 2);
@@ -92,15 +78,30 @@ namespace metadata
         {
             return it->second->methodPointer;
         }
-        if (s_nextMethodIndex < s_reverseInfos.size())
+
+
+        char sigName[1000];
+        interpreter::ComputeSignature(method, false, sigName, sizeof(sigName) - 1);
+        auto it2 = s_methodSig2Indexs.find(sigName);
+        if (it2 == s_methodSig2Indexs.end())
         {
-            ReversePInvokeInfo& rpi = s_reverseInfos[s_nextMethodIndex++];
-            rpi.methodInfo = method;
-            s_methodInfo2ReverseInfos.insert({ method, &rpi });
-            return rpi.methodPointer;
+            TEMP_FORMAT(methodSigBuf, "GetReversePInvokeWrapper fail. not find wrapper of method:%s", GetMethodNameWithSignature(method).c_str());
+            RaiseExecutionEngineException(methodSigBuf);
         }
-        RaiseExecutionEngineException("GetReversePInvokeWrapper fail. exceed max wrapper num");
-        return nullptr;
+        int32_t wrapperIndex = it2->second;
+        ReversePInvokeMethodData& data = g_reversePInvokeMethodStub[wrapperIndex];
+        if (data.methodPointer == nullptr || std::strcmp(data.methodSig, sigName))
+        {
+            TEMP_FORMAT(methodSigBuf, "GetReversePInvokeWrapper fail. exceed max wrapper num of method:%s", GetMethodNameWithSignature(method).c_str());
+            RaiseExecutionEngineException(methodSigBuf);
+        }
+
+        s_methodSig2Indexs[sigName] = wrapperIndex + 1;
+
+        ReversePInvokeInfo& rpi = s_reverseInfos[wrapperIndex];
+        rpi.methodInfo = method;
+        s_methodInfo2ReverseInfos.insert({ method, &rpi });
+        return rpi.methodPointer;
     }
 }
 }

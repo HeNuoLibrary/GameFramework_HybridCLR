@@ -661,6 +661,58 @@ namespace interpreter
 		return UnBox(obj, klass);
 	}
 
+	inline void CopyObjectData2StackDataByType(void* dst, void* src, Il2CppClass* klass)
+	{
+		IL2CPP_ASSERT(IS_CLASS_VALUE_TYPE(klass));
+		Il2CppTypeEnum type = klass->enumtype ? klass->castClass->byval_arg.type : klass->byval_arg.type;
+		switch (type)
+		{
+		case IL2CPP_TYPE_BOOLEAN:
+		case IL2CPP_TYPE_I1:
+			*(int32_t*)dst = *(int8_t*)src;
+			break;
+		case IL2CPP_TYPE_U1:
+			*(int32_t*)dst = *(uint8_t*)src;
+			break;
+		case IL2CPP_TYPE_I2:
+			*(int32_t*)dst = *(int16_t*)src;
+			break;
+		case IL2CPP_TYPE_U2:
+		case IL2CPP_TYPE_CHAR:
+			*(int32_t*)dst = *(uint16_t*)src;
+			break;
+		case IL2CPP_TYPE_I4:
+		case IL2CPP_TYPE_U4:
+		case IL2CPP_TYPE_R4:
+			*(int32_t*)dst = *(int32_t*)src;
+			break;
+		case IL2CPP_TYPE_I8:
+		case IL2CPP_TYPE_U8:
+		case IL2CPP_TYPE_R8:
+			*(int64_t*)dst = *(int64_t*)src;
+			break;
+		case IL2CPP_TYPE_I:
+		case IL2CPP_TYPE_U:
+#if HYBRIDCLR_ARCH_64
+			* (int64_t*)dst = *(int64_t*)src;
+#else
+			* (int32_t*)dst = *(int32_t*)src;
+#endif
+			break;
+		default:
+			int32_t dataSize = klass->instance_size - sizeof(Il2CppObject);
+			if (dataSize <= sizeof(StackObject))
+			{
+				*(StackObject*)dst = *(StackObject*)src;
+			}
+			else
+			{
+				std::memmove(dst, src, dataSize);
+			}
+			break;
+		}
+	}
+
 	inline void HiUnboxAny2StackObject(Il2CppObject* obj, Il2CppClass* klass, void* data)
 	{
 		if (il2cpp::vm::Class::IsNullable(klass))
@@ -674,8 +726,7 @@ namespace interpreter
 		}
 		else
 		{
-			std::memmove(data, UnBox(obj, klass), klass->instance_size - sizeof(Il2CppObject));
-			ExpandLocationData2StackDataByType(data, klass->byval_arg.type);
+			CopyObjectData2StackDataByType(data, UnBox(obj, klass), klass);
 		}
 	}
 
@@ -1135,6 +1186,16 @@ namespace interpreter
 		}
 	}
 
+	inline void ConstructorDelegate2(MethodInfo* ctor, Il2CppDelegate* del, Il2CppObject* target, MethodInfo* method)
+	{
+#if HYBRIDCLR_UNITY_2021_OR_NEW
+		void* ctorArgs[2] = { target, (void*)&method };
+		ctor->invoker_method(ctor->methodPointer, ctor, del, ctorArgs, NULL);
+#else
+		RaiseNotSupportedException("ConstructorDelegate2");
+#endif
+	}
+
 #pragma endregion
 
 #pragma region function
@@ -1204,29 +1265,22 @@ namespace interpreter
 	PREPARE_NEW_FRAME_FROM_INTERPRETER(methodInfo, argBasePtr, retPtr); \
 }
 
-inline void FixCallNativeThisPointer(const MethodInfo * method, StackObject * dst, Il2CppObject * src)
-{
-#ifdef HYBRIDCLR_UNITY_2021_OR_NEW
-	dst->obj = IS_CLASS_VALUE_TYPE(method->klass) ? src + 1 : src;
-#else
-	dst->obj = src;
-#endif
-}
+#pragma endregion
 
-inline void CallDelegateMethod(uint16_t invokeParamCount, const MethodInfo * method, Il2CppObject * obj, Managed2NativeCallMethod staticM2NMethod, Managed2NativeCallMethod instanceM2NMethod, uint16_t * argIdxs, StackObject * localVarBase, void* ret)
+#pragma region delegate
+
+inline void InvokeSingleDelegate(uint16_t invokeParamCount, const MethodInfo * method, Il2CppObject * obj, Managed2NativeCallMethod staticM2NMethod, Managed2NativeCallMethod instanceM2NMethod, uint16_t * argIdxs, StackObject * localVarBase, void* ret)
 {
-	StackObject* selfSo;
-	if (invokeParamCount == method->parameters_count)
+	StackObject* target;
+	switch ((int32_t)invokeParamCount - (int32_t)method->parameters_count)
+	{
+	case 0:
 	{
 		if (hybridclr::metadata::IsInstanceMethod(method))
 		{
 			CHECK_NOT_NULL_THROW(obj);
-			selfSo = localVarBase + argIdxs[0];
-#ifdef HYBRIDCLR_UNITY_2021_OR_NEW
-			selfSo->obj = IS_CLASS_VALUE_TYPE(method->klass) ? obj + 1 : obj;
-#else
-			selfSo->obj = obj;
-#endif
+			target = localVarBase + argIdxs[0];
+			target->obj = obj + IS_CLASS_VALUE_TYPE(method->klass);
 			instanceM2NMethod(method, argIdxs, localVarBase, ret);
 		}
 		else
@@ -1234,36 +1288,72 @@ inline void CallDelegateMethod(uint16_t invokeParamCount, const MethodInfo * met
 			RuntimeInitClassCCtor(method);
 			staticM2NMethod(method, argIdxs + 1, localVarBase, ret);
 		}
+		break;
 	}
-	else if (invokeParamCount + 1 == method->parameters_count)
+	case -1:
 	{
 		IL2CPP_ASSERT(!hybridclr::metadata::IsInstanceMethod(method));
-		selfSo = localVarBase + argIdxs[0];
-		selfSo->obj = obj;
+		target = localVarBase + argIdxs[0];
+		target->obj = obj;
 		instanceM2NMethod(method, argIdxs, localVarBase, ret);
+		break;
 	}
-	else
+	case 1:
 	{
 		IL2CPP_ASSERT(invokeParamCount == method->parameters_count + 1);
 		IL2CPP_ASSERT(hybridclr::metadata::IsInstanceMethod(method));
-		selfSo = localVarBase + argIdxs[1];
-		CHECK_NOT_NULL_THROW(selfSo->obj);
-#ifndef HYBRIDCLR_UNITY_2021_OR_NEW
-		if (IS_CLASS_VALUE_TYPE(method->klass))
+		target = localVarBase + argIdxs[1];
+		CHECK_NOT_NULL_THROW(target->obj);
+		staticM2NMethod(method, argIdxs + 1, localVarBase, ret);
+		break;
+	}
+	default:
+	{
+		RaiseExecutionEngineException("bad delegate");
+	}
+	}
+}
+
+inline Il2CppObject* InvokeDelegateBeginInvoke(const MethodInfo* method, uint16_t* argIdxs, StackObject* localVarBase)
+{
+	int32_t paramCount = method->parameters_count;
+	RuntimeDelegate* del = (RuntimeDelegate*)localVarBase[argIdxs[0]].obj;
+	CHECK_NOT_NULL_THROW(del);
+	RuntimeDelegate* callBack = (RuntimeDelegate*)localVarBase[argIdxs[paramCount - 1]].obj;
+	RuntimeObject* ctx = (RuntimeObject*)localVarBase[argIdxs[paramCount]].obj;
+	void* newArgs[256];
+	newArgs[paramCount - 1] = {};
+	for (int i = 0; i < paramCount - 2; i++)
+	{
+		const Il2CppType* argType = GET_METHOD_PARAMETER_TYPE(method->parameters[i]);
+		StackObject* argSrc = localVarBase + argIdxs[i+1];
+		void** argDst = newArgs + i;
+		if (argType->byref)
 		{
-			selfSo->obj -= 1;
-			staticM2NMethod(method, argIdxs + 1, localVarBase, ret);
-			// 恢复.否则多次调用时出错
-			selfSo->obj += 1;
+			argSrc = (StackObject*)argSrc->ptr;
+		}
+		if (hybridclr::metadata::IsValueType(argType))
+		{
+			*argDst = il2cpp::vm::Object::Box(il2cpp::vm::Class::FromIl2CppType(argType), argSrc);
 		}
 		else
 		{
-			staticM2NMethod(method, argIdxs + 1, localVarBase, ret);
+			*argDst = argSrc->ptr;
 		}
-#else
-		staticM2NMethod(method, argIdxs + 1, localVarBase, ret);
-#endif
 	}
+	return (RuntimeObject*)il2cpp_codegen_delegate_begin_invoke((RuntimeDelegate*)del, (void**)newArgs, callBack, ctx);
+}
+
+inline void InvokeDelegateEndInvokeVoid(MethodInfo* method, Il2CppAsyncResult* asyncResult)
+{
+	il2cpp_codegen_delegate_end_invoke(asyncResult, 0);
+}
+
+inline void InvokeDelegateEndInvokeRet(MethodInfo* method, Il2CppAsyncResult* asyncResult, void* ret)
+{
+	Il2CppObject* result = il2cpp_codegen_delegate_end_invoke(asyncResult, 0);
+	Il2CppClass* retKlass = il2cpp::vm::Class::FromIl2CppType(method->return_type);
+	HiUnboxAny2StackObject(result, retKlass, ret);
 }
 
 #pragma endregion
@@ -1503,6 +1593,9 @@ else \
 		Il2CppException* lastUnwindException;
 
 		PREPARE_NEW_FRAME_FROM_NATIVE(methodInfo, args, ret);
+
+		StackObject tempRet[kMaxRetValueTypeStackObjectSize];
+
 	LoopStart:
 		try
 		{
@@ -4476,7 +4569,7 @@ else \
 					uint16_t __obj = *(uint16_t*)(ip + 2);
 					MethodInfo* __method = ((MethodInfo*)imi->resolveDatas[*(uint32_t*)(ip + 4)]);
 				    Il2CppObject* _obj = il2cpp::vm::Object::New(__method->klass);
-				    ((NativeClassCtor0)(GetInterpreterDirectlyCallMethodPointer(__method)))(_obj, __method);
+				    ((NativeClassCtor0)(__method->methodPointerCallByInterp))(_obj, __method);
 				    (*(Il2CppObject**)(localVarBase + __obj)) = _obj;
 				    ip += 8;
 				    continue;
@@ -4500,11 +4593,7 @@ else \
 				    // arg1, arg2, ..., argN, value type, __this
 				    StackObject* _frameBasePtr = localVarBase + _argIdxs[0];
 				    Il2CppObject* _this = (Il2CppObject*)(_frameBasePtr - GetStackSizeByByteSize(_typeSize));
-				#if VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
-				    _frameBasePtr->ptr = _this - 1;
-				#else
 				    _frameBasePtr->ptr = _this;
-				#endif
 				    InitDefaultN(_this, _typeSize);
 				    ((Managed2NativeCallMethod)__managed2NativeMethod)(__method, _argIdxs, localVarBase, nullptr);
 				    std::memmove((void*)(localVarBase + __obj), _this, _typeSize);
@@ -4765,25 +4854,17 @@ else \
 				    uint16_t* _argIdxData = ((uint16_t*)&imi->resolveDatas[__argIdxs]);
 					StackObject* _objPtr = localVarBase + _argIdxData[0];
 				    MethodInfo* _actualMethod = GET_OBJECT_VIRTUAL_METHOD( _objPtr->obj, ((MethodInfo*)imi->resolveDatas[__methodInfo]));
-				#if !VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
 				    if (IS_CLASS_VALUE_TYPE(_actualMethod->klass))
 				    {
 				        _objPtr->obj += 1;
 				    }
-				#endif
 				    if (hybridclr::metadata::IsInterpreterImplement(_actualMethod))
 				    {
-				#if VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
-				        if (IS_CLASS_VALUE_TYPE(_actualMethod->klass))
-				        {
-				            _objPtr->obj += 1;
-				        }
-				#endif
 				        CALL_INTERP_VOID((ip + 16), _actualMethod, _objPtr);
 				    }
 				    else 
 				    {
-				        if (GetInterpreterDirectlyCallMethodPointer(_actualMethod) == nullptr)
+				        if (!InitAndGetInterpreterDirectlyCallMethodPointer(_actualMethod))
 				        {
 				            RaiseAOTGenericMethodNotInstantiatedException(_actualMethod);
 				        }
@@ -4802,25 +4883,17 @@ else \
 					StackObject* _objPtr = localVarBase + _argIdxData[0];
 				    MethodInfo* _actualMethod = GET_OBJECT_VIRTUAL_METHOD(_objPtr->obj, ((MethodInfo*)imi->resolveDatas[__methodInfo]));
 				    void* _ret = (void*)(localVarBase + __ret);
-				#if !VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
 				    if (IS_CLASS_VALUE_TYPE(_actualMethod->klass))
 				    {
 				        _objPtr->obj += 1;
 				    }
-				#endif
 				    if (hybridclr::metadata::IsInterpreterImplement(_actualMethod))
 				    {
-				#if VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
-				        if (IS_CLASS_VALUE_TYPE(_actualMethod->klass))
-				        {
-				            _objPtr->obj += 1;
-				        }
-				#endif
 				        CALL_INTERP_RET((ip + 16), _actualMethod, _objPtr, _ret);
 				    }
 				    else 
 				    {
-				        if (GetInterpreterDirectlyCallMethodPointer(_actualMethod) == nullptr)
+				        if (!InitAndGetInterpreterDirectlyCallMethodPointer(_actualMethod))
 				        {
 				            RaiseAOTGenericMethodNotInstantiatedException(_actualMethod);
 				        }
@@ -4840,25 +4913,17 @@ else \
 					StackObject* _objPtr = localVarBase + _argIdxData[0];
 				    MethodInfo* _actualMethod = GET_OBJECT_VIRTUAL_METHOD(_objPtr->obj, ((MethodInfo*)imi->resolveDatas[__methodInfo]));
 				    void* _ret = (void*)(localVarBase + __ret);
-				#if !VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
 				    if (IS_CLASS_VALUE_TYPE(_actualMethod->klass))
 				    {
 				        _objPtr->obj += 1;
 				    }
-				#endif
 				    if (hybridclr::metadata::IsInterpreterImplement(_actualMethod))
 				    {
-				#if VALUE_TYPE_METHOD_POINTER_IS_ADJUST_METHOD
-				        if (IS_CLASS_VALUE_TYPE(_actualMethod->klass))
-				        {
-				            _objPtr->obj += 1;
-				        }
-				#endif
 				        CALL_INTERP_RET((ip + 24), _actualMethod, _objPtr, _ret);
 				    }
 				    else 
 				    {
-				        if (GetInterpreterDirectlyCallMethodPointer(_actualMethod) == nullptr)
+				        if (!InitAndGetInterpreterDirectlyCallMethodPointer(_actualMethod))
 				        {
 				            RaiseAOTGenericMethodNotInstantiatedException(_actualMethod);
 				        }
@@ -4913,6 +4978,10 @@ else \
 				        CALL_INTERP_VOID((ip + 16), _method, _argBasePtr);
 				        continue;
 					}
+					if (!InitAndGetInterpreterDirectlyCallMethodPointer(_method))
+					{
+				        RaiseAOTGenericMethodNotInstantiatedException(_method);
+					}
 				    _nativeMethodPointer(_method, _argIdxsPtr, localVarBase, nullptr);
 				    ip += 16;
 				    continue;
@@ -4936,6 +5005,10 @@ else \
 					{
 				        CALL_INTERP_RET((ip + 16), _method, _argBasePtr, _ret);
 				        continue;
+					}
+					if (!InitAndGetInterpreterDirectlyCallMethodPointer(_method))
+					{
+				        RaiseAOTGenericMethodNotInstantiatedException(_method);
 					}
 				    _nativeMethodPointer(_method, _argIdxsPtr, localVarBase, _ret);
 				    ip += 16;
@@ -4962,12 +5035,16 @@ else \
 				        CALL_INTERP_RET((ip + 24), _method, _argBasePtr, _ret);
 				        continue;
 					}
+					if (!InitAndGetInterpreterDirectlyCallMethodPointer(_method))
+					{
+				        RaiseAOTGenericMethodNotInstantiatedException(_method);
+					}
 				    _nativeMethodPointer(_method, _argIdxsPtr, localVarBase, _ret);
 				    ExpandLocationData2StackDataByType(_ret, (LocationDataType)__retLocationType);
 				    ip += 24;
 				    continue;
 				}
-				case HiOpcodeEnum::CallDelegate_void:
+				case HiOpcodeEnum::CallDelegateInvoke_void:
 				{
 					uint32_t __managed2NativeStaticMethod = *(uint32_t*)(ip + 4);
 					uint32_t __managed2NativeInstanceMethod = *(uint32_t*)(ip + 8);
@@ -4991,17 +5068,12 @@ else \
 								if (hybridclr::metadata::IsInstanceMethod(method))
 								{
 									CHECK_NOT_NULL_THROW(target);
-									if (IS_CLASS_VALUE_TYPE(method->klass))
-									{
-										target++;
-									}
+									target += IS_CLASS_VALUE_TYPE(method->klass);
 									_argBasePtr->obj = target;
 								}
 								else
 								{
-									_argBasePtr++;
-									_resolvedArgIdxs++;
-									// Interpreter::RuntimeClassCCtorInit be called when first transform
+									_argBasePtr = __invokeParamCount == 0 ? _argBasePtr + 1 : localVarBase + _resolvedArgIdxs[1];
 								}
 								break;
 							}
@@ -5012,8 +5084,7 @@ else \
 							}
 							case 1:
 							{
-								_resolvedArgIdxs++;
-								_argBasePtr = localVarBase + _resolvedArgIdxs[0];
+								_argBasePtr = localVarBase + _resolvedArgIdxs[1];
 								CHECK_NOT_NULL_THROW(_argBasePtr->obj);
 								break;
 							}
@@ -5029,52 +5100,7 @@ else \
 						{
 							Managed2NativeCallMethod _staticM2NMethod = (Managed2NativeCallMethod)imi->resolveDatas[__managed2NativeStaticMethod];
 							Managed2NativeCallMethod _instanceM2NMethod = (Managed2NativeCallMethod)imi->resolveDatas[__managed2NativeInstanceMethod];
-							Managed2NativeCallMethod _managed2NativeCallMethod = nullptr;
-							switch ((int32_t)__invokeParamCount - (int32_t)method->parameters_count)
-							{
-							case 0:
-								{
-									if (hybridclr::metadata::IsInstanceMethod(method))
-									{
-										CHECK_NOT_NULL_THROW(target);
-										FixCallNativeThisPointer(method, _argBasePtr, target);
-										_managed2NativeCallMethod = _instanceM2NMethod;
-									}
-									else
-									{
-										_argBasePtr++;
-										_resolvedArgIdxs++;
-										_managed2NativeCallMethod = _staticM2NMethod;
-										RuntimeInitClassCCtor(method);
-									}
-									break;
-								}
-							case -1:
-								{
-									_argBasePtr->obj = target;
-									_managed2NativeCallMethod = _instanceM2NMethod;
-									break;
-								}
-							case 1:
-								{
-									_resolvedArgIdxs++;
-									_argBasePtr = localVarBase + _resolvedArgIdxs[0];
-					#if HYBRIDCLR_UNITY_2021_OR_NEW == 0
-									if (IS_CLASS_VALUE_TYPE(method->klass))
-									{
-										_argBasePtr->obj -= 1;
-									}
-					#endif
-									CHECK_NOT_NULL_THROW(_argBasePtr->obj);
-									_managed2NativeCallMethod = _staticM2NMethod;
-									break;
-								}
-							default:
-								{
-									RaiseExecutionEngineException("CallInterpDelegate");
-								}
-							}
-							_managed2NativeCallMethod(method, _resolvedArgIdxs, localVarBase, _ret);
+							InvokeSingleDelegate(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, tempRet);
 						}
 					}
 					else
@@ -5086,23 +5112,23 @@ else \
 						{
 							Il2CppMulticastDelegate* subDel = il2cpp_array_get(dels, Il2CppMulticastDelegate *, i);
 							IL2CPP_ASSERT(subDel);
-							//IL2CPP_ASSERT(subDel->delegate.method->klass->parent == il2cpp_defaults.multicastdelegate_class);
 							IL2CPP_ASSERT(subDel->delegates == nullptr);
 							const MethodInfo* method = subDel->delegate.method;
 							Il2CppObject* target = subDel->delegate.target;
-							CallDelegateMethod(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, _ret);
+							InvokeSingleDelegate(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, tempRet);
 						}
 					}
 				    ip += 16;
 				    continue;
 				}
-				case HiOpcodeEnum::CallDelegate_ret:
+				case HiOpcodeEnum::CallDelegateInvoke_ret:
 				{
 					uint32_t __managed2NativeStaticMethod = *(uint32_t*)(ip + 8);
 					uint32_t __managed2NativeInstanceMethod = *(uint32_t*)(ip + 12);
 					uint32_t __argIdxs = *(uint32_t*)(ip + 16);
 					uint16_t __ret = *(uint16_t*)(ip + 2);
 					uint16_t __invokeParamCount = *(uint16_t*)(ip + 4);
+					uint16_t __retTypeStackObjectSize = *(uint16_t*)(ip + 6);
 				    void* _ret = (void*)(localVarBase + __ret);
 					uint16_t* _resolvedArgIdxs = ((uint16_t*)&imi->resolveDatas[__argIdxs]);
 					StackObject* _argBasePtr = localVarBase + _resolvedArgIdxs[0];
@@ -5121,17 +5147,12 @@ else \
 								if (hybridclr::metadata::IsInstanceMethod(method))
 								{
 									CHECK_NOT_NULL_THROW(target);
-									if (IS_CLASS_VALUE_TYPE(method->klass))
-									{
-										target++;
-									}
+									target += IS_CLASS_VALUE_TYPE(method->klass);
 									_argBasePtr->obj = target;
 								}
 								else
 								{
-									_argBasePtr++;
-									_resolvedArgIdxs++;
-									// Interpreter::RuntimeClassCCtorInit be called when first transform
+									_argBasePtr = __invokeParamCount == 0 ? _argBasePtr + 1 : localVarBase + _resolvedArgIdxs[1];
 								}
 								break;
 							}
@@ -5142,8 +5163,7 @@ else \
 							}
 							case 1:
 							{
-								_resolvedArgIdxs++;
-								_argBasePtr = localVarBase + _resolvedArgIdxs[0];
+								_argBasePtr = localVarBase + _resolvedArgIdxs[1];
 								CHECK_NOT_NULL_THROW(_argBasePtr->obj);
 								break;
 							}
@@ -5159,52 +5179,7 @@ else \
 						{
 							Managed2NativeCallMethod _staticM2NMethod = (Managed2NativeCallMethod)imi->resolveDatas[__managed2NativeStaticMethod];
 							Managed2NativeCallMethod _instanceM2NMethod = (Managed2NativeCallMethod)imi->resolveDatas[__managed2NativeInstanceMethod];
-							Managed2NativeCallMethod _managed2NativeCallMethod = nullptr;
-							switch ((int32_t)__invokeParamCount - (int32_t)method->parameters_count)
-							{
-							case 0:
-								{
-									if (hybridclr::metadata::IsInstanceMethod(method))
-									{
-										CHECK_NOT_NULL_THROW(target);
-										FixCallNativeThisPointer(method, _argBasePtr, target);
-										_managed2NativeCallMethod = _instanceM2NMethod;
-									}
-									else
-									{
-										_argBasePtr++;
-										_resolvedArgIdxs++;
-										_managed2NativeCallMethod = _staticM2NMethod;
-										RuntimeInitClassCCtor(method);
-									}
-									break;
-								}
-							case -1:
-								{
-									_argBasePtr->obj = target;
-									_managed2NativeCallMethod = _instanceM2NMethod;
-									break;
-								}
-							case 1:
-								{
-									_resolvedArgIdxs++;
-									_argBasePtr = localVarBase + _resolvedArgIdxs[0];
-					#if HYBRIDCLR_UNITY_2021_OR_NEW == 0
-									if (IS_CLASS_VALUE_TYPE(method->klass))
-									{
-										_argBasePtr->obj -= 1;
-									}
-					#endif
-									CHECK_NOT_NULL_THROW(_argBasePtr->obj);
-									_managed2NativeCallMethod = _staticM2NMethod;
-									break;
-								}
-							default:
-								{
-									RaiseExecutionEngineException("CallInterpDelegate");
-								}
-							}
-							_managed2NativeCallMethod(method, _resolvedArgIdxs, localVarBase, _ret);
+							InvokeSingleDelegate(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, tempRet);
 						}
 					}
 					else
@@ -5216,17 +5191,17 @@ else \
 						{
 							Il2CppMulticastDelegate* subDel = il2cpp_array_get(dels, Il2CppMulticastDelegate *, i);
 							IL2CPP_ASSERT(subDel);
-							//IL2CPP_ASSERT(subDel->delegate.method->klass->parent == il2cpp_defaults.multicastdelegate_class);
 							IL2CPP_ASSERT(subDel->delegates == nullptr);
 							const MethodInfo* method = subDel->delegate.method;
 							Il2CppObject* target = subDel->delegate.target;
-							CallDelegateMethod(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, _ret);
+							InvokeSingleDelegate(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, tempRet);
 						}
 					}
+					CopyStackObject((StackObject*)_ret, tempRet, __retTypeStackObjectSize);
 				    ip += 24;
 				    continue;
 				}
-				case HiOpcodeEnum::CallDelegate_ret_expand:
+				case HiOpcodeEnum::CallDelegateInvoke_ret_expand:
 				{
 					uint32_t __managed2NativeStaticMethod = *(uint32_t*)(ip + 8);
 					uint32_t __managed2NativeInstanceMethod = *(uint32_t*)(ip + 12);
@@ -5252,17 +5227,12 @@ else \
 								if (hybridclr::metadata::IsInstanceMethod(method))
 								{
 									CHECK_NOT_NULL_THROW(target);
-									if (IS_CLASS_VALUE_TYPE(method->klass))
-									{
-										target++;
-									}
+									target += IS_CLASS_VALUE_TYPE(method->klass);
 									_argBasePtr->obj = target;
 								}
 								else
 								{
-									_argBasePtr++;
-									_resolvedArgIdxs++;
-									// Interpreter::RuntimeClassCCtorInit be called when first transform
+									_argBasePtr = __invokeParamCount == 0 ? _argBasePtr + 1 : localVarBase + _resolvedArgIdxs[1];
 								}
 								break;
 							}
@@ -5273,8 +5243,7 @@ else \
 							}
 							case 1:
 							{
-								_resolvedArgIdxs++;
-								_argBasePtr = localVarBase + _resolvedArgIdxs[0];
+								_argBasePtr = localVarBase + _resolvedArgIdxs[1];
 								CHECK_NOT_NULL_THROW(_argBasePtr->obj);
 								break;
 							}
@@ -5290,52 +5259,7 @@ else \
 						{
 							Managed2NativeCallMethod _staticM2NMethod = (Managed2NativeCallMethod)imi->resolveDatas[__managed2NativeStaticMethod];
 							Managed2NativeCallMethod _instanceM2NMethod = (Managed2NativeCallMethod)imi->resolveDatas[__managed2NativeInstanceMethod];
-							Managed2NativeCallMethod _managed2NativeCallMethod = nullptr;
-							switch ((int32_t)__invokeParamCount - (int32_t)method->parameters_count)
-							{
-							case 0:
-								{
-									if (hybridclr::metadata::IsInstanceMethod(method))
-									{
-										CHECK_NOT_NULL_THROW(target);
-										FixCallNativeThisPointer(method, _argBasePtr, target);
-										_managed2NativeCallMethod = _instanceM2NMethod;
-									}
-									else
-									{
-										_argBasePtr++;
-										_resolvedArgIdxs++;
-										_managed2NativeCallMethod = _staticM2NMethod;
-										RuntimeInitClassCCtor(method);
-									}
-									break;
-								}
-							case -1:
-								{
-									_argBasePtr->obj = target;
-									_managed2NativeCallMethod = _instanceM2NMethod;
-									break;
-								}
-							case 1:
-								{
-									_resolvedArgIdxs++;
-									_argBasePtr = localVarBase + _resolvedArgIdxs[0];
-					#if HYBRIDCLR_UNITY_2021_OR_NEW == 0
-									if (IS_CLASS_VALUE_TYPE(method->klass))
-									{
-										_argBasePtr->obj -= 1;
-									}
-					#endif
-									CHECK_NOT_NULL_THROW(_argBasePtr->obj);
-									_managed2NativeCallMethod = _staticM2NMethod;
-									break;
-								}
-							default:
-								{
-									RaiseExecutionEngineException("CallInterpDelegate");
-								}
-							}
-							_managed2NativeCallMethod(method, _resolvedArgIdxs, localVarBase, _ret);
+							InvokeSingleDelegate(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, tempRet);
 						}
 					}
 					else
@@ -5347,15 +5271,40 @@ else \
 						{
 							Il2CppMulticastDelegate* subDel = il2cpp_array_get(dels, Il2CppMulticastDelegate *, i);
 							IL2CPP_ASSERT(subDel);
-							//IL2CPP_ASSERT(subDel->delegate.method->klass->parent == il2cpp_defaults.multicastdelegate_class);
 							IL2CPP_ASSERT(subDel->delegates == nullptr);
 							const MethodInfo* method = subDel->delegate.method;
 							Il2CppObject* target = subDel->delegate.target;
-							CallDelegateMethod(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, _ret);
+							InvokeSingleDelegate(__invokeParamCount, method, target, _staticM2NMethod, _instanceM2NMethod, _resolvedArgIdxs, localVarBase, tempRet);
 						}
 					}
-				    ExpandLocationData2StackDataByType(_ret, (LocationDataType)__retLocationType);
+				    CopyLocationData2StackDataByType((StackObject*)_ret, tempRet, (LocationDataType)__retLocationType);
 				    ip += 24;
+				    continue;
+				}
+				case HiOpcodeEnum::CallDelegateBeginInvoke:
+				{
+					uint16_t __result = *(uint16_t*)(ip + 2);
+					uint32_t __methodInfo = *(uint32_t*)(ip + 4);
+					uint32_t __argIdxs = *(uint32_t*)(ip + 8);
+					(*(Il2CppObject**)(localVarBase + __result)) = InvokeDelegateBeginInvoke(((MethodInfo*)imi->resolveDatas[__methodInfo]), ((uint16_t*)&imi->resolveDatas[__argIdxs]), localVarBase);
+				    ip += 16;
+				    continue;
+				}
+				case HiOpcodeEnum::CallDelegateEndInvoke_void:
+				{
+					uint32_t __methodInfo = *(uint32_t*)(ip + 4);
+					uint16_t __asyncResult = *(uint16_t*)(ip + 2);
+				    InvokeDelegateEndInvokeVoid(((MethodInfo*)imi->resolveDatas[__methodInfo]), (Il2CppAsyncResult*)(*(Il2CppObject**)(localVarBase + __asyncResult)));
+				    ip += 8;
+				    continue;
+				}
+				case HiOpcodeEnum::CallDelegateEndInvoke_ret:
+				{
+					uint32_t __methodInfo = *(uint32_t*)(ip + 8);
+					uint16_t __asyncResult = *(uint16_t*)(ip + 2);
+					uint16_t __ret = *(uint16_t*)(ip + 4);
+				    InvokeDelegateEndInvokeRet(((MethodInfo*)imi->resolveDatas[__methodInfo]), (Il2CppAsyncResult*)(*(Il2CppObject**)(localVarBase + __asyncResult)), (void*)(localVarBase + __ret));
+				    ip += 16;
 				    continue;
 				}
 				case HiOpcodeEnum::NewDelegate:
@@ -5370,6 +5319,18 @@ else \
 				    ip += 16;
 				    continue;
 				}
+				case HiOpcodeEnum::CtorDelegate:
+				{
+					uint16_t __dst = *(uint16_t*)(ip + 2);
+					MethodInfo* __ctor = ((MethodInfo*)imi->resolveDatas[*(uint32_t*)(ip + 8)]);
+					uint16_t __obj = *(uint16_t*)(ip + 4);
+					uint16_t __method = *(uint16_t*)(ip + 6);
+				    Il2CppDelegate* _del = (Il2CppDelegate*)il2cpp::vm::Object::New(__ctor->klass);
+				    ConstructorDelegate2(__ctor, _del, (*(Il2CppObject**)(localVarBase + __obj)), (*(MethodInfo**)(localVarBase + __method)));
+				    (*(Il2CppObject**)(localVarBase + __dst)) = (Il2CppObject*)_del;
+				    ip += 16;
+				    continue;
+				}
 				case HiOpcodeEnum::CallCommonNativeInstance_v_0:
 				{
 					uint32_t __method = *(uint32_t*)(ip + 4);
@@ -5378,7 +5339,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -5391,7 +5352,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int8_t(*_NativeMethod_)(void*, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5404,7 +5365,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5417,7 +5378,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int16_t(*_NativeMethod_)(void*, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5430,7 +5391,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint16_t(*_NativeMethod_)(void*, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5443,7 +5404,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5456,7 +5417,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5469,7 +5430,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5482,7 +5443,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5495,7 +5456,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef HtVector2f(*_NativeMethod_)(void*, MethodInfo*);
-				    *(HtVector2f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(HtVector2f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5508,7 +5469,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef HtVector3f(*_NativeMethod_)(void*, MethodInfo*);
-				    *(HtVector3f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(HtVector3f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5521,7 +5482,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef HtVector4f(*_NativeMethod_)(void*, MethodInfo*);
-				    *(HtVector4f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, _resolvedMethod);
+				    *(HtVector4f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5534,7 +5495,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5548,7 +5509,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int32_t, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5563,7 +5524,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5579,7 +5540,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5592,7 +5553,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5606,7 +5567,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int64_t, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5621,7 +5582,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5637,7 +5598,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5650,7 +5611,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5664,7 +5625,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, float, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5679,7 +5640,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, float, float, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5695,7 +5656,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, float, float, float, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5708,7 +5669,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5722,7 +5683,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, double, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5737,7 +5698,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, double, double, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5753,7 +5714,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef void(*_NativeMethod_)(void*, double, double, double, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5767,7 +5728,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5782,7 +5743,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5798,7 +5759,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5815,7 +5776,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -5829,7 +5790,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5844,7 +5805,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5860,7 +5821,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5877,7 +5838,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -5891,7 +5852,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5906,7 +5867,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5922,7 +5883,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5939,7 +5900,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, float, float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -5953,7 +5914,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5968,7 +5929,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -5984,7 +5945,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6001,7 +5962,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef uint8_t(*_NativeMethod_)(void*, double, double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6015,7 +5976,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6030,7 +5991,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6046,7 +6007,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6063,7 +6024,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6077,7 +6038,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6092,7 +6053,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6108,7 +6069,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6125,7 +6086,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6139,7 +6100,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6154,7 +6115,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6170,7 +6131,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6187,7 +6148,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, float, float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6201,7 +6162,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6216,7 +6177,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6232,7 +6193,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6249,7 +6210,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int32_t(*_NativeMethod_)(void*, double, double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6263,7 +6224,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6278,7 +6239,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int32_t, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6294,7 +6255,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6311,7 +6272,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6325,7 +6286,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6340,7 +6301,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int64_t, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6356,7 +6317,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6373,7 +6334,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6387,7 +6348,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6402,7 +6363,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, float, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6418,7 +6379,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, float, float, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6435,7 +6396,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, float, float, float, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6449,7 +6410,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6464,7 +6425,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, double, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6480,7 +6441,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, double, double, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6497,7 +6458,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef int64_t(*_NativeMethod_)(void*, double, double, double, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6511,7 +6472,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6526,7 +6487,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int32_t, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6542,7 +6503,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6559,7 +6520,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6573,7 +6534,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6588,7 +6549,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int64_t, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6604,7 +6565,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6621,7 +6582,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6635,7 +6596,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6650,7 +6611,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, float, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6666,7 +6627,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, float, float, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6683,7 +6644,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, float, float, float, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6697,7 +6658,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6712,7 +6673,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, double, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6728,7 +6689,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, double, double, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6745,7 +6706,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef float(*_NativeMethod_)(void*, double, double, double, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6759,7 +6720,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6774,7 +6735,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int32_t, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6790,7 +6751,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6807,7 +6768,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6821,7 +6782,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6836,7 +6797,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int64_t, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6852,7 +6813,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6869,7 +6830,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6883,7 +6844,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6898,7 +6859,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, float, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6914,7 +6875,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, float, float, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6931,7 +6892,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, float, float, float, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -6945,7 +6906,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6960,7 +6921,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, double, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6976,7 +6937,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, double, double, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -6993,7 +6954,7 @@ else \
 				    CHECK_NOT_NULL_THROW(_self);
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    typedef double(*_NativeMethod_)(void*, double, double, double, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_self, (*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 24;
 				    continue;
 				}
@@ -7003,7 +6964,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7014,7 +6975,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int8_t(*_NativeMethod_)(MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7025,7 +6986,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7036,7 +6997,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int16_t(*_NativeMethod_)(MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7047,7 +7008,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint16_t(*_NativeMethod_)(MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7058,7 +7019,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7069,7 +7030,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7080,7 +7041,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7091,7 +7052,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7102,7 +7063,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef HtVector2f(*_NativeMethod_)(MethodInfo*);
-				    *(HtVector2f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(HtVector2f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7113,7 +7074,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef HtVector3f(*_NativeMethod_)(MethodInfo*);
-				    *(HtVector3f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(HtVector3f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7124,7 +7085,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef HtVector4f(*_NativeMethod_)(MethodInfo*);
-				    *(HtVector4f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)(_resolvedMethod);
+				    *(HtVector4f*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)(_resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7135,7 +7096,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7147,7 +7108,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int32_t, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7160,7 +7121,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int32_t, int32_t, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7174,7 +7135,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7185,7 +7146,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7197,7 +7158,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int64_t, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7210,7 +7171,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int64_t, int64_t, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7224,7 +7185,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7235,7 +7196,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7247,7 +7208,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(float, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7260,7 +7221,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(float, float, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7274,7 +7235,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(float, float, float, float, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7285,7 +7246,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 8;
 				    continue;
 				}
@@ -7297,7 +7258,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(double, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7310,7 +7271,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(double, double, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7324,7 +7285,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef void(*_NativeMethod_)(double, double, double, double, MethodInfo*);
-				    ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7336,7 +7297,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7349,7 +7310,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7363,7 +7324,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7378,7 +7339,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7390,7 +7351,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7403,7 +7364,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7417,7 +7378,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7432,7 +7393,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7444,7 +7405,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7457,7 +7418,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7471,7 +7432,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7486,7 +7447,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(float, float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7498,7 +7459,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7511,7 +7472,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7525,7 +7486,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7540,7 +7501,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef uint8_t(*_NativeMethod_)(double, double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7552,7 +7513,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7565,7 +7526,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7579,7 +7540,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7594,7 +7555,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7606,7 +7567,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7619,7 +7580,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7633,7 +7594,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7648,7 +7609,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7660,7 +7621,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7673,7 +7634,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7687,7 +7648,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7702,7 +7663,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(float, float, float, float, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7714,7 +7675,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7727,7 +7688,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7741,7 +7702,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7756,7 +7717,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int32_t(*_NativeMethod_)(double, double, double, double, MethodInfo*);
-				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int32_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7768,7 +7729,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7781,7 +7742,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int32_t, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7795,7 +7756,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7810,7 +7771,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7822,7 +7783,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7835,7 +7796,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int64_t, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7849,7 +7810,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7864,7 +7825,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7876,7 +7837,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7889,7 +7850,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(float, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7903,7 +7864,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(float, float, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7918,7 +7879,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(float, float, float, float, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7930,7 +7891,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7943,7 +7904,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(double, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7957,7 +7918,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(double, double, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7972,7 +7933,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef int64_t(*_NativeMethod_)(double, double, double, double, MethodInfo*);
-				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(int64_t*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7984,7 +7945,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -7997,7 +7958,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int32_t, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8011,7 +7972,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int32_t, int32_t, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8026,7 +7987,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8038,7 +7999,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8051,7 +8012,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int64_t, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8065,7 +8026,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int64_t, int64_t, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8080,7 +8041,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8092,7 +8053,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8105,7 +8066,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(float, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8119,7 +8080,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(float, float, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8134,7 +8095,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(float, float, float, float, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8146,7 +8107,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8159,7 +8120,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(double, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8173,7 +8134,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(double, double, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8188,7 +8149,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef float(*_NativeMethod_)(double, double, double, double, MethodInfo*);
-				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(float*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8200,7 +8161,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8213,7 +8174,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int32_t, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8227,7 +8188,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int32_t, int32_t, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8242,7 +8203,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int32_t, int32_t, int32_t, int32_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int32_t*)(localVarBase + __param0)), (*(int32_t*)(localVarBase + __param1)), (*(int32_t*)(localVarBase + __param2)), (*(int32_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8254,7 +8215,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8267,7 +8228,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int64_t, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8281,7 +8242,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int64_t, int64_t, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8296,7 +8257,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(int64_t, int64_t, int64_t, int64_t, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(int64_t*)(localVarBase + __param0)), (*(int64_t*)(localVarBase + __param1)), (*(int64_t*)(localVarBase + __param2)), (*(int64_t*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8308,7 +8269,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8321,7 +8282,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(float, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8335,7 +8296,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(float, float, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8350,7 +8311,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(float, float, float, float, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(float*)(localVarBase + __param0)), (*(float*)(localVarBase + __param1)), (*(float*)(localVarBase + __param2)), (*(float*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8362,7 +8323,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8375,7 +8336,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(double, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8389,7 +8350,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(double, double, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}
@@ -8404,7 +8365,7 @@ else \
 				    MethodInfo* _resolvedMethod = ((MethodInfo*)imi->resolveDatas[__method]);
 				    RuntimeInitClassCCtorWithoutInitClass(_resolvedMethod);
 				    typedef double(*_NativeMethod_)(double, double, double, double, MethodInfo*);
-				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointer)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
+				    *(double*)(void*)(localVarBase + __ret) = ((_NativeMethod_)_resolvedMethod->methodPointerCallByInterp)((*(double*)(localVarBase + __param0)), (*(double*)(localVarBase + __param1)), (*(double*)(localVarBase + __param2)), (*(double*)(localVarBase + __param3)), _resolvedMethod);
 				    ip += 16;
 				    continue;
 				}

@@ -335,10 +335,14 @@ namespace interpreter
 		CallInd_void,
 		CallInd_ret,
 		CallInd_ret_expand,
-		CallDelegate_void,
-		CallDelegate_ret,
-		CallDelegate_ret_expand,
+		CallDelegateInvoke_void,
+		CallDelegateInvoke_ret,
+		CallDelegateInvoke_ret_expand,
+		CallDelegateBeginInvoke,
+		CallDelegateEndInvoke_void,
+		CallDelegateEndInvoke_ret,
 		NewDelegate,
+		CtorDelegate,
 		CallCommonNativeInstance_v_0,
 		CallCommonNativeInstance_i1_0,
 		CallCommonNativeInstance_u1_0,
@@ -3834,7 +3838,7 @@ namespace interpreter
 	};
 
 
-	struct IRCallDelegate_void : IRCommon
+	struct IRCallDelegateInvoke_void : IRCommon
 	{
 		uint16_t invokeParamCount;
 		uint32_t managed2NativeStaticMethod;
@@ -3843,12 +3847,11 @@ namespace interpreter
 	};
 
 
-	struct IRCallDelegate_ret : IRCommon
+	struct IRCallDelegateInvoke_ret : IRCommon
 	{
 		uint16_t ret;
 		uint16_t invokeParamCount;
-		uint8_t __pad6;
-		uint8_t __pad7;
+		uint16_t retTypeStackObjectSize;
 		uint32_t managed2NativeStaticMethod;
 		uint32_t managed2NativeInstanceMethod;
 		uint32_t argIdxs;
@@ -3859,7 +3862,7 @@ namespace interpreter
 	};
 
 
-	struct IRCallDelegate_ret_expand : IRCommon
+	struct IRCallDelegateInvoke_ret_expand : IRCommon
 	{
 		uint8_t retLocationType;
 		uint8_t __pad3;
@@ -3875,12 +3878,58 @@ namespace interpreter
 	};
 
 
+	struct IRCallDelegateBeginInvoke : IRCommon
+	{
+		uint16_t result;
+		uint32_t methodInfo;
+		uint32_t argIdxs;
+		uint8_t __pad12;
+		uint8_t __pad13;
+		uint8_t __pad14;
+		uint8_t __pad15;
+	};
+
+
+	struct IRCallDelegateEndInvoke_void : IRCommon
+	{
+		uint16_t asyncResult;
+		uint32_t methodInfo;
+	};
+
+
+	struct IRCallDelegateEndInvoke_ret : IRCommon
+	{
+		uint16_t asyncResult;
+		uint16_t ret;
+		uint8_t __pad6;
+		uint8_t __pad7;
+		uint32_t methodInfo;
+		uint8_t __pad12;
+		uint8_t __pad13;
+		uint8_t __pad14;
+		uint8_t __pad15;
+	};
+
+
 	struct IRNewDelegate : IRCommon
 	{
 		uint16_t dst;
 		uint16_t obj;
 		uint16_t method;
 		uint32_t klass;
+		uint8_t __pad12;
+		uint8_t __pad13;
+		uint8_t __pad14;
+		uint8_t __pad15;
+	};
+
+
+	struct IRCtorDelegate : IRCommon
+	{
+		uint16_t dst;
+		uint16_t obj;
+		uint16_t method;
+		uint32_t ctor;
 		uint8_t __pad12;
 		uint8_t __pad13;
 		uint8_t __pad14;

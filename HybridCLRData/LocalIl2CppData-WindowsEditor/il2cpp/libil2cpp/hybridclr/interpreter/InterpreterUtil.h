@@ -69,25 +69,24 @@ namespace interpreter
 		}
 	}
 
-	inline void ExpandLocationData2StackDataByType(void* retValue, Il2CppTypeEnum type)
+	inline void CopyLocationData2StackDataByType(StackObject* dst, StackObject* src, LocationDataType type)
 	{
 		switch (type)
 		{
-		case IL2CPP_TYPE_BOOLEAN:
-		case IL2CPP_TYPE_I1:
-			*(int32_t*)retValue = *(int8_t*)retValue;
+		case hybridclr::interpreter::LocationDataType::I1:
+			*(int32_t*)dst = *(int8_t*)src;
 			break;
-		case IL2CPP_TYPE_U1:
-			*(int32_t*)retValue = *(uint8_t*)retValue;
+		case hybridclr::interpreter::LocationDataType::U1:
+			*(int32_t*)dst = *(uint8_t*)src;
 			break;
-		case IL2CPP_TYPE_I2:
-			*(int32_t*)retValue = *(int16_t*)retValue;
+		case hybridclr::interpreter::LocationDataType::I2:
+			*(int32_t*)dst = *(int16_t*)src;
 			break;
-		case IL2CPP_TYPE_U2:
-		case IL2CPP_TYPE_CHAR:
-			*(int32_t*)retValue = *(uint16_t*)retValue;
+		case hybridclr::interpreter::LocationDataType::U2:
+			*(int32_t*)dst = *(uint16_t*)src;
 			break;
 		default:
+			*dst = *src;
 			break;
 		}
 	}
@@ -99,5 +98,6 @@ namespace interpreter
 		return type <= LocationDataType::U8;
 	}
 	Il2CppObject* TranslateNativeValueToBoxValue(const Il2CppType* type, void* value);
+
 }
 }
