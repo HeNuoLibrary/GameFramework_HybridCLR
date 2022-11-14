@@ -2,6 +2,7 @@
   "dependencies": {
     "com.focus-creative-games.hybridclr_unity": "https://github.com/HeNuoLibrary/hybridclr_unity.git",
     "com.henuo.gameframework": "https://github.com/HeNuoLibrary/UnityGameFramework.git",
+    "com.henuo.loopscrollrect": "https://github.com/HeNuoLibrary/LoopScrollRect.git",
     "com.unity.collab-proxy": "1.15.15",
     "com.unity.feature.development": "1.0.1",
     "com.unity.ide.rider": "3.0.13",
