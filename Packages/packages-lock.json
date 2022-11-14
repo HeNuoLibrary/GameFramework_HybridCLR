@@ -5,7 +5,7 @@
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "34ec975d029abbc7aaaea5830100997d3dfbef04"
+      "hash": "bead954c3cdebcf6f1564393908b13c7bc1452c0"
     },
     "com.henuo.gameframework": {
       "version": "https://github.com/HeNuoLibrary/UnityGameFramework.git",
