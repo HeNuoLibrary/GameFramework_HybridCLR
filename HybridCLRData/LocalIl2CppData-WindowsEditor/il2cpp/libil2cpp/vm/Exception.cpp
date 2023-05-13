@@ -465,14 +465,15 @@ namespace vm
             assemblyNameStr += assemblyName.name;
             assemblyNameStr += ", Version=";
 
-            char buffer[16];
-            sprintf(buffer, "%d.", assemblyName.major);
+            const size_t bufferSize = 16;
+            char buffer[bufferSize];
+            snprintf(buffer, bufferSize, "%d.", assemblyName.major);
             assemblyNameStr += buffer;
-            sprintf(buffer, "%d.", assemblyName.minor);
+            snprintf(buffer, bufferSize, "%d.", assemblyName.minor);
             assemblyNameStr += buffer;
-            sprintf(buffer, "%d.", assemblyName.build);
+            snprintf(buffer, bufferSize, "%d.", assemblyName.build);
             assemblyNameStr += buffer;
-            sprintf(buffer, "%d", assemblyName.revision);
+            snprintf(buffer, bufferSize, "%d", assemblyName.revision);
             assemblyNameStr += buffer;
 
             if (!assemblyName.culture.empty())
@@ -687,7 +688,6 @@ namespace vm
         return FromNameMsg(Image::GetCorlib(), "System.IO", "FileNotFoundException", msg);
     }
 
-    // ==={{ hybridclr
     Il2CppException* Exception::GetStackOverflowException(const char* msg)
     {
         return FromNameMsg(Image::GetCorlib(), "System", "StackOverflowException", msg);
@@ -702,7 +702,6 @@ namespace vm
     {
         return FromNameMsg(Image::GetCorlib(), "System", "MissingFieldException", msg);
     }
-    // ===}} hybridclr
 
     Il2CppException* Exception::GetCustomAttributeFormatException(const char* msg)
     {

@@ -38,6 +38,12 @@ namespace hybridclr
 					++dstOffset;
 					break;
 				}
+				case LocationDataType::SR:
+				{
+					CopyStackObject(dst, src->ptr, arg.stackObjectSize);
+					dstOffset += arg.stackObjectSize;
+					break;
+				}
 				case LocationDataType::S_16:
 				{
 					// when size > 8, arg is ref to struct
@@ -58,12 +64,6 @@ namespace hybridclr
 					break;
 				}
 				case LocationDataType::S_N:
-				{
-					CopyStackObject(dst, src->ptr, arg.stackObjectSize);
-					dstOffset += arg.stackObjectSize;
-					break;
-				}
-				case LocationDataType::SR:
 				{
 					CopyStackObject(dst, src->ptr, arg.stackObjectSize);
 					dstOffset += arg.stackObjectSize;
@@ -173,6 +173,7 @@ namespace hybridclr
 			int32_t size = metadata::GetTypeValueSize(klass);
 			switch (size)
 			{
+			case 4:
 			case 8:
 			case 12:
 			case 16:
@@ -182,7 +183,7 @@ namespace hybridclr
 			}
 			
 			bool isHFA = ComputeHFATypeInfo0(klass, typeInfo);
-			if (isHFA && typeInfo.count >= 2 && typeInfo.count <= 4)
+			if (isHFA && typeInfo.count >= 1 && typeInfo.count <= 4)
 			{
 				int32_t fieldSize = typeInfo.eleType->type == IL2CPP_TYPE_R4 ? 4 : 8;
 				return size == fieldSize * typeInfo.count;
@@ -268,6 +269,30 @@ namespace hybridclr
 			return false;
 		}
 
+		static bool IsWebGLSpecialValueType(Il2CppClass* klass)
+		{
+			if (klass->enumtype)
+			{
+				return false;
+			}
+			if (klass->field_count == 0)
+			{
+				return true;
+			}
+			il2cpp::vm::Class::SetupFields(klass);
+			for (uint16_t i = 0; i < klass->field_count; i++)
+			{
+				FieldInfo* field = klass->fields + i;
+				const Il2CppType* ftype = field->type;
+				if (!metadata::IsInstanceField(ftype))
+				{
+					continue;
+				}
+				return false;
+			}
+			return true;
+		}
+
 		static void AppendString(char* sigBuf, size_t bufSize, size_t& pos, const char* str)
 		{
 			size_t len = std::strlen(str);
@@ -300,6 +325,7 @@ namespace hybridclr
 				RaiseExecutionEngineException("");
 			}
 		}
+
 		static void AppendValueTypeSignatureByAligmentAndSize(int32_t typeSize, uint8_t aligment, bool returnValue, char* sigBuf, size_t bufferSize, size_t& pos)
 		{
 #if HYBRIDCLR_ABI_UNIVERSAL_32 || HYBRIDCLR_ABI_UNIVERSAL_64 || HYBRIDCLR_ABI_WEBGL32
@@ -354,12 +380,45 @@ namespace hybridclr
 #endif
 		}
 
+		static void AppendEmptyValueTypeSignatureByAligmentAndSize(int32_t typeSize, uint8_t aligment, char* sigBuf, size_t bufferSize, size_t& pos)
+		{
+			switch (aligment)
+			{
+			case 0:
+			case 1:
+			{
+				pos += std::sprintf(sigBuf + pos, "X%d", typeSize);
+				break;
+			}
+			case 2:
+			{
+				pos += std::sprintf(sigBuf + pos, "Y%d", typeSize);
+				break;
+			}
+			case 4:
+			{
+				pos += std::sprintf(sigBuf + pos, "Z%d", typeSize);
+				break;
+			}
+			case 8:
+			{
+				pos += std::sprintf(sigBuf + pos, "W%d", typeSize);
+				break;
+			}
+			default:
+			{
+				TEMP_FORMAT(errMsg, "not support aligment:%d size:%d", aligment, typeSize);
+				RaiseExecutionEngineException(errMsg);
+			}
+			}
+		}
+
 		static void AppendSignature(const Il2CppType* type, bool returnType, char* sigBuf, size_t bufferSize, size_t& pos);
 
 		static void AppendValueTypeSignature(Il2CppClass* klass, bool returnType, char* sigBuf, size_t bufferSize, size_t& pos)
 		{
 			int32_t typeSize = il2cpp::vm::Class::GetValueSize(klass, nullptr);
-#if HYBRIDCLR_ABI_UNIVERSAL_64 || HYBRIDCLR_ABI_ARM_64
+#if HYBRIDCLR_ABI_ARM_64
 			HFATypeInfo typeInfo = {};
 			if (ComputeHFATypeInfo(klass, typeInfo))
 			{
@@ -367,6 +426,11 @@ namespace hybridclr
 				{
 					switch (typeInfo.count)
 					{
+					case 1:
+					{
+						AppendString(sigBuf, bufferSize, pos, "r4");
+						return;
+					}
 					case 2:
 					{
 						AppendString(sigBuf, bufferSize, pos, "vf2");
@@ -389,6 +453,11 @@ namespace hybridclr
 					IL2CPP_ASSERT(typeInfo.eleType->type == IL2CPP_TYPE_R8);
 					switch (typeInfo.count)
 					{
+					case 1:
+					{
+						AppendString(sigBuf, bufferSize, pos, "r8");
+						return;
+					}
 					case 2:
 					{
 						AppendString(sigBuf, bufferSize, pos, "vd2");
@@ -410,20 +479,22 @@ namespace hybridclr
 			// FIXME HSV
 			uint8_t actualAligment = 1;
 			AppendValueTypeSignatureByAligmentAndSize(typeSize, actualAligment, returnType, sigBuf, bufferSize, pos);
+#elif HYBRIDCLR_ABI_UNIVERSAL_64
+			uint8_t actualAligment = 1;
+			AppendValueTypeSignatureByAligmentAndSize(typeSize, actualAligment, returnType, sigBuf, bufferSize, pos);
 #elif HYBRIDCLR_ABI_UNIVERSAL_32
 			uint8_t actualAligment = klass->naturalAligment <= 4 ? 1 : 8;
 			AppendValueTypeSignatureByAligmentAndSize(typeSize, actualAligment, returnType, sigBuf, bufferSize, pos);
 #elif HYBRIDCLR_ABI_WEBGL32
-			//SingletonStruct ss = {};
-			//if (ComputSingletonStruct(klass, ss))
-			//{
-			//	AppendSignature(ss.type, returnType, sigBuf, bufferSize, pos);
-			//}
-			//else
-			//{
 			uint8_t actualAligment = klass->naturalAligment;
-			AppendValueTypeSignatureByAligmentAndSize(typeSize, actualAligment, returnType, sigBuf, bufferSize, pos);
-			//}
+			if (IsWebGLSpecialValueType(klass))
+			{
+				AppendEmptyValueTypeSignatureByAligmentAndSize(typeSize, actualAligment, sigBuf, bufferSize, pos);
+			}
+			else
+			{
+				AppendValueTypeSignatureByAligmentAndSize(typeSize, actualAligment, returnType, sigBuf, bufferSize, pos);
+			}
 #else
 #error "not support platform"
 #endif

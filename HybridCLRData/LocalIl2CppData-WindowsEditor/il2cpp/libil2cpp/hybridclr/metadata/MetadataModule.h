@@ -42,9 +42,14 @@ namespace metadata
 			return GetImage(DecodeImageIndex(typeDef->byvalTypeIndex));
 		}
 
-		static InterpreterImage* GetImage(const Il2CppMethodDefinition* typeDef)
+		static InterpreterImage* GetImage(const Il2CppMethodDefinition* method)
 		{
-			return GetImage(DecodeImageIndex(typeDef->nameIndex));
+			return GetImage(DecodeImageIndex(method->nameIndex));
+		}
+
+		static InterpreterImage* GetImage(const MethodInfo* method)
+		{
+			return GetImage(method->klass->image);
 		}
 
 		static InterpreterImage* GetImageByEncodedIndex(uint32_t encodedIndex)
@@ -119,7 +124,7 @@ namespace metadata
 
 		static uint32_t GetFieldOffset(const Il2CppClass* klass, int32_t fieldIndexInType, FieldInfo* field)
 		{
-			return GetImage(klass)->GetFieldOffset(klass, fieldIndexInType, field);
+			return GetImage(klass)->GetFieldOffset(klass, fieldIndexInType);
 		}
 
 		static const MethodInfo* GetMethodInfoFromMethodDefinitionIndex(uint32_t index)
@@ -262,6 +267,8 @@ namespace metadata
 			auto it = s_methodPointer2ReverseInfos.find(methodPointer);
 			return it != s_methodPointer2ReverseInfos.end() ? it->second->index : -1;
 		}
+
+		static LoadImageErrorCode LoadMetadataForAOTAssembly(const void* dllBytes, uint32_t dllSize, HomologousImageMode mode);
 	private:
 		static void InitReversePInvokeInfo();
 

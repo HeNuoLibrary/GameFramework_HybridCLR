@@ -70,8 +70,8 @@ namespace HybridCLR.Builder
             {
                 HotfixPlatformIndex = hotfixPlatformIndex;
             }
-            GUIItem("编译hotfix.dll。", "Compile", CompileHotfixDll);
             GUIItem("生成打包之前的必要资源,link Aot MethodBridge", "PreBuild", GeneratorPreBuildAsset);
+            GUIItem("编译hotfix.dll。", "Compile", CompileHotfixDll);
             GUIResourcesTool();
             GUIItem("由于ab包依赖裁剪后的dll，在编译hotfix.dl前需要build工程。", "EditorBuild", BuildPlayerWindow.ShowBuildPlayerWindow);
             EditorGUILayout.EndVertical();

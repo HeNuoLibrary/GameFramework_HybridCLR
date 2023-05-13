@@ -374,6 +374,7 @@ namespace InteropServices
             vm::Exception::Raise(vm::Exception::GetArgumentNullException("t"));
 
         Il2CppClass* typeInfo = vm::Class::FromIl2CppType(rtype->type);
+        il2cpp::vm::Class::SetupFields(typeInfo);
 
         if (typeInfo->native_size != -1)
         {
@@ -609,6 +610,14 @@ namespace InteropServices
                         offset = RoundUpToMultiple(offset, type->packingSize == 0 ? marshaledFieldAlignment : std::min((int)type->packingSize, marshaledFieldAlignment));
                     }
                 }
+                else
+                {
+                    // If this is the first field, it might have a non-zero offset, as it could be in a type
+                    // with an explicit layout. So calculate it offset based on the distance it is from the
+                    // end of the object header.
+                    offset = field->offset - sizeof(Il2CppObject);
+                }
+
                 previousField = field;
 
                 if (fieldNameToFind == vm::Field::GetName(field))

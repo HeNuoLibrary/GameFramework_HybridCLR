@@ -3,9 +3,9 @@
 #include "metadata/MetadataModule.h"
 #include "interpreter/InterpreterModule.h"
 
+
 namespace hybridclr
 {
-
 	Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointerSlow(MethodInfo* method)
 	{
 		IL2CPP_ASSERT(!method->initInterpCallMethodPointer);

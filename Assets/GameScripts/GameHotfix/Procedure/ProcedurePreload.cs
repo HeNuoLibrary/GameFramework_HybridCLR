@@ -73,7 +73,7 @@ namespace GameFrame.Hotfix
                 }
             }
 
-            ChangeState<ProcedureHuatuoLaunch>(procedureOwner);
+            ChangeState<ProcedureHybridCLRLaunch>(procedureOwner);
         }
 
         private void PreloadResources()

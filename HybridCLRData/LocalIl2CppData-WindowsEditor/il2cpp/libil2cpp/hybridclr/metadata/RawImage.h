@@ -14,7 +14,8 @@ namespace metadata
 		NOT_IMPLEMENT,
 		AOT_ASSEMBLY_NOT_FIND,
 		HOMOLOGOUS_ONLY_SUPPORT_AOT_ASSEMBLY,
-		HOMOLOGOUS_ASSEMBLY_HAS_LOADED,
+		HOMOLOGOUS_ASSEMBLY_HAS_BEEN_LOADED,
+		INVALID_HOMOLOGOUS_MODE,
 	};
 
 	class RawImage
@@ -30,7 +31,7 @@ namespace metadata
 		}
 
 
-		LoadImageErrorCode Load(const byte* imageData, size_t length);
+		LoadImageErrorCode Load(const void* imageData, size_t length);
 
 		uint32_t GetTypeCount() const
 		{

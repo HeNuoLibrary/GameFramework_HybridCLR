@@ -23,6 +23,7 @@ namespace metadata
 
 	struct ParamDetail
 	{
+		Il2CppType type;
 		Il2CppParameterDefinition paramDef;
 		const Il2CppMethodDefinition* methodDef;
 		//uint32_t methodIndex;
@@ -105,11 +106,11 @@ namespace metadata
 
 		}
 
-		LoadImageErrorCode Load(const byte* imageData, size_t length)
+		LoadImageErrorCode Load(const void* imageData, size_t length)
 		{
 			if (_inited)
 			{
-				RaiseExecutionEngineException("image can't be init twicely");
+				RaiseExecutionEngineException("image can't be init again");
 			}
 			_inited = true;
 			return _rawImage.Load(imageData, length);
@@ -185,13 +186,13 @@ namespace metadata
 			return GetTypeRawIndex((const Il2CppTypeDefinition*)_types[DecodeMetadataIndex(il2cppTypeIndex)].data.typeHandle);
 		}
 
-		const Il2CppTypeDefinition* GetTypeFromRawIndex(uint32_t index) const override
+		const Il2CppTypeDefinition* GetTypeFromRawIndex(uint32_t index) const
 		{
 			IL2CPP_ASSERT((size_t)index < _typesDefines.size());
 			return &_typesDefines[index];
 		}
 
-		const Il2CppType* GetIl2CppTypeFromRawIndex(uint32_t index) const override
+		const Il2CppType* GetIl2CppTypeFromRawIndex(uint32_t index) const
 		{
 			IL2CPP_ASSERT((size_t)index < _types.size());
 			return &_types[index];
@@ -255,7 +256,7 @@ namespace metadata
 			return nullptr;
 		}
 
-		Il2CppGenericContainer* GetGenericContainerByTypeDefIndex(int32_t typeDefIndex) override
+		Il2CppGenericContainer* GetGenericContainerByTypeDefRawIndex(int32_t typeDefIndex) override
 		{
 			IL2CPP_ASSERT(typeDefIndex < (int32_t)_typeDetails.size());
 			return GetGenericContainerByTypeDefinition(&_typesDefines[typeDefIndex]);
@@ -298,27 +299,35 @@ namespace metadata
 
 		const Il2CppParameterDefaultValue* GetParameterDefaultValueEntryByRawIndex(uint32_t index)
 		{
-			IL2CPP_ASSERT(index < (uint32_t)_paramDefaultValues.size());
-			return &_paramDefaultValues[index];
+			IL2CPP_ASSERT(index < (uint32_t)_params.size());
+			uint32_t defaultValueIndex = _params[index].defaultValueIndex;
+			return defaultValueIndex != kDefaultValueIndexNull ? &_paramDefaultValues[defaultValueIndex] : nullptr;
 		}
 
-		uint32_t GetFieldOffset(const Il2CppTypeDefinition* typeDef, int32_t fieldIndexInType, FieldInfo* field)
+		uint32_t GetFieldOffset(const Il2CppTypeDefinition* typeDef, int32_t fieldIndexInType)
 		{
 			uint32_t fieldActualIndex = DecodeMetadataIndex(typeDef->fieldStart) + fieldIndexInType;
 			IL2CPP_ASSERT(fieldActualIndex < (uint32_t)_fieldDetails.size());
 			return _fieldDetails[fieldActualIndex].offset;
 		}
 
-		uint32_t GetFieldOffset(TypeDefinitionIndex typeIndex, int32_t fieldIndexInType, FieldInfo* field)
+		uint32_t GetFieldOffset(TypeDefinitionIndex typeIndex, int32_t fieldIndexInType)
 		{
 			Il2CppTypeDefinition* typeDef = _typeDetails[typeIndex].typeDef;
-			return GetFieldOffset(typeDef, fieldIndexInType, field);
+			return GetFieldOffset(typeDef, fieldIndexInType);
 		}
 
-		uint32_t GetFieldOffset(const Il2CppClass* klass, int32_t fieldIndexInType, FieldInfo* field)
+		uint32_t GetFieldOffset(const Il2CppClass* klass, int32_t fieldIndexInType)
 		{
 			Il2CppTypeDefinition* typeDef = (Il2CppTypeDefinition*)(klass->typeMetadataHandle);
-			return GetFieldOffset(typeDef, fieldIndexInType, field);
+			return GetFieldOffset(typeDef, fieldIndexInType);
+		}
+
+		int32_t GetPackingSize(const Il2CppTypeDefinition* typeDef)
+		{
+			int32_t typeIndex = GetTypeRawIndex(typeDef);
+			auto it = _classLayouts.find(typeIndex);
+			return it != _classLayouts.end() ? it->second.packingSize : 0;
 		}
 
 		const Il2CppFieldDefaultValue* GetFieldDefaultValueEntryByRawIndex(uint32_t index)
@@ -458,27 +467,20 @@ namespace metadata
 
 		Il2CppInterfaceOffsetInfo GetInterfaceOffsetInfo(const Il2CppTypeDefinition* typeDefine, TypeInterfaceOffsetIndex index);
 
-		const MethodInfo* GetMethodInfoFromToken(uint32_t token, const Il2CppGenericContainer* klassGenericContainer, const Il2CppGenericContainer* methodGenericContainer, const Il2CppGenericContext* genericContext) override;
-		const FieldInfo* GetFieldInfoFromToken(uint32_t token, const Il2CppGenericContainer* klassGenericContainer, const Il2CppGenericContainer* methodGenericContainer, const Il2CppGenericContext* genericContext) override;
-		void GetStandAloneMethodSigFromToken(uint32_t token, const Il2CppGenericContainer* klassGenericContainer, const Il2CppGenericContainer* methodGenericContainer, const Il2CppGenericContext* genericContext, ResolveStandAloneMethodSig& methodSig) override;
-
 		uint32_t AddIl2CppTypeCache(Il2CppType& type);
 
 		uint32_t AddIl2CppGenericContainers(Il2CppGenericContainer& geneContainer);
 
-		void ReadFieldRefInfoFromToken(const Il2CppGenericContainer* klassGenericContainer, const Il2CppGenericContainer* methodGenericContainer, TableType tableType, uint32_t rowIndex, FieldRefInfo& ret);
-		const MethodInfo* ReadMethodInfoFromToken(const Il2CppGenericContainer* klassGenericContainer, const Il2CppGenericContainer* methodGenericContainer, const Il2CppGenericContext* genericContext, Il2CppGenericInst* genericInst, TableType tableType, uint32_t rowIndex);
-		const MethodInfo* GetMethodInfo(const Il2CppType* containerType, const Il2CppMethodDefinition* methodDef, const Il2CppGenericInst* instantiation, const Il2CppGenericContext* genericContext) override;
-		
+		bool GetModuleIl2CppType(Il2CppType& type, uint32_t moduleRowIndex, uint32_t typeNamespace, uint32_t typeName, bool raiseExceptionIfNotFound) override;
+		void ReadFieldRefInfoFromFieldDefToken(uint32_t rowIndex, FieldRefInfo& ret) override;
 		void ReadMethodDefSig(BlobReader& reader, const Il2CppGenericContainer* klassGenericContainer, const Il2CppGenericContainer* methodGenericContainer, Il2CppMethodDefinition& methodDef, std::vector<ParamDetail>& paramArr);
-		
 
 		void InitBasic(Il2CppImage* image);
 		void BuildIl2CppImage(Il2CppImage* image);
 		void BuildIl2CppAssembly(Il2CppAssembly* assembly);
 
-		void InitRuntimeMetadatas();
-	private:
+		void InitRuntimeMetadatas() override;
+	protected:
 
 		void InitTypeDefs_0();
 		void InitTypeDefs_1();
@@ -505,13 +507,10 @@ namespace metadata
 		void InitEvents();
 		void InitMethodSemantics();
 		void InitInterfaces();
-		void InitVTables_1();
-		void InitVTables_2();
+		void InitVTables();
 
 		void ComputeBlittable(Il2CppTypeDefinition* def, std::vector<bool>& computFlags);
-
-		void ComputeVTable1(TypeDefinitionDetail* tdd);
-		void ComputeVTable2(TypeDefinitionDetail* tdd);
+		void ComputeVTable(TypeDefinitionDetail* tdd);
 
 		void SetIl2CppImage(Il2CppImage* image)
 		{
@@ -544,6 +543,7 @@ namespace metadata
 		std::vector<MethodBody> _methodBodies;
 
 		std::vector<ParamDetail> _params;
+		std::vector<int32_t> _paramRawIndex2ActualParamIndex; // rawIindex = rowIndex - 1; because local function, param list count maybe less than actual method param count
 		std::vector<Il2CppParameterDefaultValue> _paramDefaultValues;
 
 		std::vector<Il2CppGenericParameter> _genericParams;

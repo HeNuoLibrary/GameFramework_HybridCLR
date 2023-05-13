@@ -13,7 +13,13 @@
 #include "vm/Exception.h"
 #include "vm/Thread.h"
 #include "vm/Runtime.h"
+#include "vm/Reflection.h"
 #include "metadata/GenericMetadata.h"
+#if HYBRIDCLR_UNITY_2020_OR_NEW
+#include "vm-utils/icalls/mscorlib/System.Threading/Interlocked.h"
+#else
+#include "icalls/mscorlib/System.Threading/Interlocked.h"
+#endif
 
 #include "../metadata/MetadataModule.h"
 
@@ -1132,39 +1138,32 @@ namespace interpreter
 
 	inline int32_t HiInterlockedCompareExchange(int32_t* location, int32_t newValue, int32_t oldValue)
 	{
-		return il2cpp::os::Atomic::CompareExchange(location, newValue, oldValue);
+		return il2cpp::icalls::mscorlib::System::Threading::Interlocked::CompareExchange(location, newValue, oldValue);
 	}
-
 
 	inline int64_t HiInterlockedCompareExchange(int64_t* location, int64_t newValue, int64_t oldValue)
 	{
-		return il2cpp::os::Atomic::CompareExchange64(location, newValue, oldValue);
+		return il2cpp::icalls::mscorlib::System::Threading::Interlocked::CompareExchange64(location, newValue, oldValue);
 	}
-
 
 	inline void* HiInterlockedCompareExchange(void** location, void* newValue, void* oldValue)
 	{
-		return il2cpp::os::Atomic::CompareExchangePointer(location, newValue, oldValue);
+		return il2cpp::icalls::mscorlib::System::Threading::Interlocked::CompareExchange_T(location, newValue, oldValue);
 	}
 
 	inline int32_t HiInterlockedExchange(int32_t* location, int32_t newValue)
 	{
-		return il2cpp::os::Atomic::Exchange(location, newValue);
+		return il2cpp::icalls::mscorlib::System::Threading::Interlocked::Exchange(location, newValue);
 	}
 
 	inline int64_t HiInterlockedExchange(int64_t* location, int64_t newValue)
 	{
-#if HYBRIDCLR_ARCH_64
-		return il2cpp::os::Atomic::Exchange64(location, newValue);
-#else
-		RaiseExecutionEngineException("not support LockedExchange64");
-		return newValue;
-#endif
+		return il2cpp::icalls::mscorlib::System::Threading::Interlocked::Exchange64(location, newValue);
 	}
 
 	inline void* HiInterlockedExchange(void** location, void* newValue)
 	{
-		return il2cpp::os::Atomic::ExchangePointer(location, newValue);
+		return il2cpp::icalls::mscorlib::System::Threading::Interlocked::ExchangePointer(location, newValue);
 	}
 
 #define MEMORY_BARRIER() il2cpp::os::Atomic::FullMemoryBarrier()
@@ -1271,6 +1270,10 @@ namespace interpreter
 
 inline void InvokeSingleDelegate(uint16_t invokeParamCount, const MethodInfo * method, Il2CppObject * obj, Managed2NativeCallMethod staticM2NMethod, Managed2NativeCallMethod instanceM2NMethod, uint16_t * argIdxs, StackObject * localVarBase, void* ret)
 {
+	if (!InterpreterModule::HasImplementCallNative2Managed(method))
+	{
+		instanceM2NMethod = staticM2NMethod = InterpreterModule::Managed2NativeCallByReflectionInvoke;
+	}
 	StackObject* target;
 	switch ((int32_t)invokeParamCount - (int32_t)method->parameters_count)
 	{
@@ -11065,6 +11068,13 @@ else \
 					uint16_t __src = *(uint16_t*)(ip + 4);
 					uint16_t __srcType = *(uint16_t*)(ip + 6);
 				    (*(int32_t*)(localVarBase + __dst)) =  UnsafeEnumCast((void*)(localVarBase + __src), __srcType);
+				    ip += 8;
+				    continue;
+				}
+				case HiOpcodeEnum::AssemblyGetExecutingAssembly:
+				{
+					uint16_t __ret = *(uint16_t*)(ip + 2);
+				    (*(Il2CppObject**)(localVarBase + __ret)) = (Il2CppObject*)il2cpp::vm::Reflection::GetAssemblyObject(imi->method->klass->image->assembly);
 				    ip += 8;
 				    continue;
 				}

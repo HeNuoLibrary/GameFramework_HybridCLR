@@ -44,13 +44,11 @@
 #include <limits>
 #include <stdarg.h>
 
-// ==={{ hybridclr
 #include <set>
 #include "hybridclr/metadata/MetadataUtil.h"
 #include "hybridclr/interpreter/Engine.h"
 #include "hybridclr/interpreter/Interpreter.h"
 #include "hybridclr/interpreter/InterpreterModule.h"
-// ===}} hybridclr
 
 namespace il2cpp
 {
@@ -158,47 +156,6 @@ namespace vm
         return NULL;
 
 #undef RETURN_DEFAULT_TYPE
-    }
-
-/* From ECMA-335, I.8.7 Assignment compatibility:
-
-    The reduced type of a type T is the following:
-
-    1. If the underlying type of T is:
-        a. int8, or unsigned int8, then its reduced type is int8.
-        b. int16, or unsigned int16, then its reduced type is int16.
-        c. int32, or unsigned int32, then its reduced type is int32.
-        d. int64, or unsigned int64, then its reduced type is int64.
-        e. native int, or unsigned native int, then its reduced type is native int.
-    2. Otherwise, the reduced type is itself.
-*/
-    static inline const Il2CppClass* GetReducedType(const Il2CppClass* type)
-    {
-        switch (type->byval_arg.type)
-        {
-            case IL2CPP_TYPE_I1:
-            case IL2CPP_TYPE_U1:
-                return il2cpp_defaults.sbyte_class;
-
-            case IL2CPP_TYPE_I2:
-            case IL2CPP_TYPE_U2:
-                return il2cpp_defaults.int16_class;
-
-            case IL2CPP_TYPE_I4:
-            case IL2CPP_TYPE_U4:
-                return il2cpp_defaults.int32_class;
-
-            case IL2CPP_TYPE_I8:
-            case IL2CPP_TYPE_U8:
-                return il2cpp_defaults.int64_class;
-
-            case IL2CPP_TYPE_I:
-            case IL2CPP_TYPE_U:
-                return il2cpp_defaults.int_class;
-
-            default:
-                return type;
-        }
     }
 
     Il2CppClass* Class::FromSystemType(Il2CppReflectionType *type)
@@ -684,11 +641,11 @@ namespace vm
                 if (oklass->rank != klass->rank)
                     return false;
 
-                if (oklass->castClass->byval_arg.valuetype)
+                if (Class::IsValuetype(oklass->castClass))
                 {
                     // Full array covariance is defined only for reference types.
                     // For value types, array element reduced types must match
-                    return GetReducedType(klass->castClass) == GetReducedType(oklass->castClass);
+                    return klass->castClass == oklass->castClass;
                 }
 
                 return Class::IsAssignableFrom(klass->castClass, oklass->castClass);
@@ -709,8 +666,7 @@ namespace vm
 
             if (klass->parent == il2cpp_defaults.multicastdelegate_class && klass->generic_class != NULL)
             {
-                Il2CppMetadataGenericContainerHandle containerHandle = MetadataCache::GetGenericContainerFromGenericClass(klass->image, klass->generic_class);
-                if (IsGenericClassAssignableFrom(klass, oklass, klass->image, containerHandle))
+                if (IsGenericClassAssignableFrom(klass, oklass, oklass))
                     return true;
             }
 
@@ -720,23 +676,20 @@ namespace vm
         if (klass->generic_class != NULL)
         {
             // checking for simple reference equality is not enough in this case because generic interface might have covariant and/or contravariant parameters
-
-            Il2CppMetadataGenericContainerHandle containerHandle = MetadataCache::GetGenericContainerFromGenericClass(klass->image, klass->generic_class);
-
             for (Il2CppClass* iter = oklass; iter != NULL; iter = iter->parent)
             {
-                if (IsGenericClassAssignableFrom(klass, iter, klass->image, containerHandle))
+                if (IsGenericClassAssignableFrom(klass, iter, oklass))
                     return true;
 
                 for (uint16_t i = 0; i < iter->interfaces_count; ++i)
                 {
-                    if (IsGenericClassAssignableFrom(klass, iter->implementedInterfaces[i], klass->image, containerHandle))
+                    if (IsGenericClassAssignableFrom(klass, iter->implementedInterfaces[i], oklass))
                         return true;
                 }
 
                 for (uint16_t i = 0; i < iter->interface_offsets_count; ++i)
                 {
-                    if (IsGenericClassAssignableFrom(klass, iter->interfaceOffsets[i].interfaceType, klass->image, containerHandle))
+                    if (IsGenericClassAssignableFrom(klass, iter->interfaceOffsets[i].interfaceType, oklass))
                         return true;
                 }
             }
@@ -786,6 +739,11 @@ namespace vm
     bool Class::IsInflated(const Il2CppClass *klass)
     {
         return klass->generic_class != NULL;
+    }
+
+    bool Class::IsGenericTypeDefinition(const Il2CppClass* klass)
+    {
+        return IsGeneric(klass) && !IsInflated(klass);
     }
 
     bool Class::IsSubclassOf(Il2CppClass *klass, Il2CppClass *klassc, bool check_interfaces)
@@ -966,14 +924,6 @@ namespace vm
             klass->minimumAlignment = sizeof(Il2CppObject*);
         }
 
-        // ==={{ hybridclr
-        bool isInterpreterType = hybridclr::metadata::IsInterpreterType(klass);
-        bool computSize = klass->instance_size == 0 && isInterpreterType;
-        bool isExplictLayout = klass->flags & TYPE_ATTRIBUTE_EXPLICIT_LAYOUT;
-        bool computLayout = isInterpreterType;
-        bool computInstanceFieldLayout = !isExplictLayout && isInterpreterType;
-        // ===}} hybridclr
-
         if (klass->field_count)
         {
             for (uint16_t i = 0; i < klass->field_count; i++)
@@ -1004,85 +954,15 @@ namespace vm
                 klass->actualSize = IL2CPP_SIZEOF_STRUCT_WITH_NO_INSTANCE_FIELDS + sizeof(Il2CppObject);
             }
 
-// ==={{ hybridclr
-            // comput size when explicit layout
-            if (computSize && isExplictLayout && !layoutData.FieldOffsets.empty())
-            {
-                instanceSize = IL2CPP_SIZEOF_STRUCT_WITH_NO_INSTANCE_FIELDS + sizeof(Il2CppObject);
-                for (size_t i = 0; i < klass->field_count; i++)
-                {
-                    FieldInfo* field = klass->fields + i;
-                    if (Field::IsInstance(field))
-                    {
-                        const Il2CppType* ftype = Type::GetUnderlyingType(field->type);
-                        il2cpp::metadata::SizeAndAlignment sa = il2cpp::metadata::FieldLayout::GetTypeSizeAndAlignment(ftype);
-                        // offset has add ObjectHeader
-                        instanceSize = std::max(instanceSize, field->offset + sa.size);
-                    }
-                }
-            }
-
             instanceSize = UpdateInstanceSizeForGenericClass(klass, instanceSize);
 
-            // must set instance_size before comput static fields.
-            if (computSize)
-            {
-                klass->instance_size = (uint32_t)instanceSize;
-                klass->native_size = (uint32_t)instanceSize;
-                klass->actualSize = (uint32_t)instanceSize;
-            }
-
-            IL2CPP_ASSERT(klass->instance_size > 0);
             klass->size_inited = true;
 
             il2cpp::metadata::FieldLayout::LayoutFields(klass, Field::IsNormalStatic, 0, 0, 1, 0, staticLayoutData);
             il2cpp::metadata::FieldLayout::LayoutFields(klass, Field::IsThreadStatic, 0, 0, 1, 0, threadStaticLayoutData);
 
-            if (computLayout)
-            {
-                uint32_t fieldIndex = 0;
-                uint32_t staticFieldIndex = 0;
-                uint32_t threadStaticFieldIndex = 0;
-                for (size_t i = 0; i < klass->field_count ; i++)
-                {
-                    FieldInfo* field = klass->fields + i;
-                    const Il2CppType* ftype = Type::GetUnderlyingType(field->type);
-                    if (Field::IsInstance(field))
-                    {
-                        if (computInstanceFieldLayout)
-                        {
-                            field->offset = (int32_t)layoutData.FieldOffsets[fieldIndex++];
-                        }
-                        else
-                        {
-                            fieldIndex++;
-                            IL2CPP_ASSERT(field->offset > 0);
-                        }
-                    }
-                    else if (Field::IsNormalStatic(field))
-                    {
-                        field->offset = (int32_t)staticLayoutData.FieldOffsets[staticFieldIndex++];
-                    }
-                    else if (Field::IsThreadStatic(field))
-                    {
-                        // not set field->offset;
-                        //field->offset = (int32_t)threadStaticLayoutData.FieldOffsets[threadStaticFieldIndex++];
-                        // because we not correctly init field->offset when create FieldInfo
-                        int32_t offset = (int32_t)threadStaticLayoutData.FieldOffsets[threadStaticFieldIndex++];
-                        il2cpp::vm::MetadataCache::FixThreadLocalStaticOffsetForFieldLocked(field, offset, lock);
-                    }
-                }
-            }
-
             klass->minimumAlignment = layoutData.minimumAlignment;
-            if (!isInterpreterType)
-            {
-                klass->actualSize = static_cast<uint32_t>(layoutData.actualClassSize);
-            }
-            else
-            {
-                // nothing todo
-            }
+            klass->actualSize = static_cast<uint32_t>(layoutData.actualClassSize);
 
             if (klass->image == il2cpp_defaults.corlib && !strcmp("Ephemeron", klass->name))
             {
@@ -1091,10 +971,6 @@ namespace vm
 
             size_t staticSize = staticLayoutData.classSize;
             size_t threadStaticSize = threadStaticLayoutData.classSize;
-            klass->static_fields_size = (uint32_t)staticSize;
-            klass->thread_static_fields_size = (uint32_t)threadStaticSize;
-
-// ===}} hybridclr
 
             if (klass->generic_class)
             {
@@ -1113,15 +989,6 @@ namespace vm
         }
         else
         {
-// ==={{ hybridclr
-            if (computSize)
-            {
-                if (IS_CLASS_VALUE_TYPE(klass))
-                {
-                    instanceSize = actualSize = IL2CPP_SIZEOF_STRUCT_WITH_NO_INSTANCE_FIELDS + sizeof(Il2CppObject);
-                }
-            }
-// ===}} hybridclr
             // need to set this in case there are no fields in a generic instance type
             instanceSize = UpdateInstanceSizeForGenericClass(klass, instanceSize);
 
@@ -1130,14 +997,6 @@ namespace vm
             // field of the base class doesn't go to an alignment boundary and the compiler ABI
             // uses that extra space (as clang does).
             klass->actualSize = static_cast<uint32_t>(actualSize);
-
-// ==={{ hybridclr
-            if (computSize)
-            {
-                klass->instance_size = (uint32_t)instanceSize;
-                klass->native_size = (uint32_t)instanceSize;
-            }
-// ===}} hybridclr
         }
 
         if (klass->static_fields_size)
@@ -1269,7 +1128,6 @@ namespace vm
 
                 newMethod->methodPointerCallByInterp = newMethod->methodPointer;
                 newMethod->virtualMethodPointerCallByInterp = newMethod->virtualMethodPointer;
-                newMethod->isInterpterImpl = hybridclr::metadata::IsInterpreterType(klass);
                 newMethod->initInterpCallMethodPointer = true;
                 newMethod->klass = klass;
                 newMethod->return_type = methodInfo.return_type;
@@ -1305,6 +1163,7 @@ namespace vm
                     newMethod->virtualMethodPointer = MetadataCache::GetUnresolvedVirtualCallStub(newMethod);
                 }
 
+                newMethod->isInterpterImpl = hybridclr::interpreter::InterpreterModule::IsImplementsByInterpreter(newMethod);
 
                 klass->methods[index] = newMethod;
 
@@ -1669,14 +1528,18 @@ namespace vm
 #endif
         }
 
-        if (!Class::IsGeneric(klass))
+        bool canBeInstantiated = !Class::IsGeneric(klass) && !il2cpp::metadata::GenericMetadata::ContainsGenericParameters(klass);
+
+        if (canBeInstantiated)
+        {
             SetupGCDescriptor(klass, lock);
 
-        if (klass->generic_class)
-        {
-            // This should be kept last.  InflateRGCTXLocked may need intialized data from the class we are initializing
-            if (klass->genericRecursionDepth < il2cpp::metadata::GenericMetadata::GetMaximumRuntimeGenericDepth() || il2cpp::vm::Runtime::IsLazyRGCTXInflationEnabled())
-                klass->rgctx_data = il2cpp::metadata::GenericMetadata::InflateRGCTXLocked(klass->image, klass->token, &klass->generic_class->context, lock);
+            if (klass->generic_class)
+            {
+                // This should be kept last.  InflateRGCTXLocked may need initialized data from the class we are initializing
+                if (klass->genericRecursionDepth < il2cpp::metadata::GenericMetadata::GetMaximumRuntimeGenericDepth() || il2cpp::vm::Runtime::IsLazyRGCTXInflationEnabled())
+                    klass->rgctx_data = il2cpp::metadata::GenericMetadata::InflateRGCTXLocked(klass->image, klass->token, &klass->generic_class->context, lock);
+            }
         }
 
         klass->initialized = true;
@@ -2021,18 +1884,19 @@ namespace vm
 
     bool Class::HasReferences(Il2CppClass *klass)
     {
-        if (klass->size_init_pending)
-        {
-            abort();
-            /* Be conservative */
-            return true;
-        }
-        else
+        if (!klass->size_inited)
         {
             SetupFields(klass);
 
-            return klass->has_references;
+            if (!klass->size_inited)
+            {
+                abort();
+                /* Be conservative */
+                return true;
+            }
         }
+
+        return klass->has_references;
     }
 
     const il2cpp::utils::dynamic_array<Il2CppClass*>& Class::GetStaticFieldData()
@@ -2276,7 +2140,6 @@ namespace vm
             {
                 return klass;
             }
-            // ==={{ hybridclr
             hybridclr::interpreter::MachineState& state = hybridclr::interpreter::InterpreterModule::GetCurrentThreadMachineState();
             const hybridclr::interpreter::InterpFrame* frame = state.GetTopFrame();
             if (frame)
@@ -2300,7 +2163,6 @@ namespace vm
                     return klass;
                 }
             }
-            // ===}} hybridclr
 
             // First, try mscorlib            if (klass == NULL && image != Image::GetCorlib())
             klass = Image::FromTypeNameParseInfo(Image::GetCorlib(), info, searchFlags & kTypeSearchFlagIgnoreCase);
@@ -2362,46 +2224,31 @@ namespace vm
         return klass->declaringType;
     }
 
-    const MethodInfo* Class::GetVirtualMethod(Il2CppClass *klass, const MethodInfo *method)
+    const MethodInfo* Class::GetVirtualMethod(Il2CppClass *klass, const MethodInfo *virtualMethod)
     {
         IL2CPP_ASSERT(klass->is_vtable_initialized);
 
-        if ((method->flags & METHOD_ATTRIBUTE_FINAL) || !(method->flags & METHOD_ATTRIBUTE_VIRTUAL))
-            return method;
+        if ((virtualMethod->flags & METHOD_ATTRIBUTE_FINAL) || !(virtualMethod->flags & METHOD_ATTRIBUTE_VIRTUAL))
+            return virtualMethod;
 
-        Il2CppClass* methodDeclaringType = method->klass;
+        Il2CppClass* methodDeclaringType = virtualMethod->klass;
+        const MethodInfo* vtableSlotMethod;
         if (Class::IsInterface(methodDeclaringType))
         {
-            const VirtualInvokeData* invokeData = ClassInlines::GetInterfaceInvokeDataFromVTable(klass, methodDeclaringType, method->slot);
+            const VirtualInvokeData* invokeData = ClassInlines::GetInterfaceInvokeDataFromVTable(klass, methodDeclaringType, virtualMethod->slot);
             if (invokeData == NULL)
                 return NULL;
-            const MethodInfo* itfMethod = invokeData->method;
-            if (Method::IsGenericInstance(method))
-            {
-                if (itfMethod->methodPointer)
-                    return itfMethod;
-
-                const MethodInfo* methodDefintion = klass->generic_class ? il2cpp::vm::MetadataCache::GetGenericMethodDefinition(itfMethod) : itfMethod;
-                return il2cpp::metadata::GenericMethod::GetMethod(methodDefintion, klass->generic_class ? klass->generic_class->context.class_inst : NULL, method->genericMethod->context.method_inst);
-            }
-            else
-            {
-                return itfMethod;
-            }
-        }
-
-        if (Method::IsGenericInstance(method))
-        {
-            if (method->methodPointer)
-                return method;
-
-            return il2cpp::metadata::GenericMethod::GetMethod(klass->vtable[method->slot].method, method->genericMethod->context.class_inst, method->genericMethod->context.method_inst);
+            vtableSlotMethod = invokeData->method;
         }
         else
         {
-            IL2CPP_ASSERT(method->slot < klass->vtable_count);
-            return klass->vtable[method->slot].method;
+            IL2CPP_ASSERT(virtualMethod->slot < klass->vtable_count);
+            vtableSlotMethod = klass->vtable[virtualMethod->slot].method;
         }
+
+        if (Method::IsGenericInstanceMethod(virtualMethod))
+            return il2cpp::metadata::GenericMethod::GetGenericVirtualMethod(vtableSlotMethod, virtualMethod);
+        return vtableSlotMethod;
     }
 
     static bool is_generic_argument(Il2CppType* type)

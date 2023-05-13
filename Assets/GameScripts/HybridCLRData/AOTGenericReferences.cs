@@ -1,127 +1,136 @@
 public class AOTGenericReferences : UnityEngine.MonoBehaviour
 {
 
+	// {{ AOT assemblies
+	// DOTween.dll
+	// GameFramework.dll
+	// Unity.TextMeshPro.dll
+	// UnityEngine.CoreModule.dll
+	// UnityGameFramework.Runtime.dll
+	// mscorlib.dll
+	// }}
+
 	// {{ constraint implement type
 	// }} 
 
-	// {{ AOT generic type
-	//DG.Tweening.Core.DOGetter`1<System.Object>
-	//DG.Tweening.Core.DOGetter`1<UnityEngine.Color>
-	//DG.Tweening.Core.DOGetter`1<UnityEngine.Vector2>
-	//DG.Tweening.Core.DOGetter`1<UnityEngine.Quaternion>
-	//DG.Tweening.Core.DOGetter`1<UnityEngine.Vector3>
-	//DG.Tweening.Core.DOGetter`1<System.Single>
-	//DG.Tweening.Core.DOSetter`1<System.Object>
-	//DG.Tweening.Core.DOSetter`1<UnityEngine.Color>
-	//DG.Tweening.Core.DOSetter`1<UnityEngine.Vector2>
-	//DG.Tweening.Core.DOSetter`1<UnityEngine.Quaternion>
-	//DG.Tweening.Core.DOSetter`1<UnityEngine.Vector3>
-	//DG.Tweening.Core.DOSetter`1<System.Single>
-	//DG.Tweening.Core.TweenerCore`3<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions>
-	//DG.Tweening.Core.TweenerCore`3<UnityEngine.Vector3,System.Object,DG.Tweening.Plugins.Options.PathOptions>
-	//DG.Tweening.Core.TweenerCore`3<UnityEngine.Quaternion,UnityEngine.Vector3,DG.Tweening.Plugins.Options.QuaternionOptions>
-	//GameFramework.DataTable.IDataTable`1<System.Object>
-	//GameFramework.Fsm.FsmState`1<System.Object>
-	//GameFramework.Fsm.IFsm`1<System.Object>
-	//GameFramework.GameFrameworkAction`1<System.Object>
-	//GameFramework.ObjectPool.IObjectPool`1<System.Object>
-	//GameFramework.Variable`1<System.Byte>
-	//System.Action`1<System.Object>
-	//System.Action`4<DG.Tweening.Plugins.Options.PathOptions,System.Object,UnityEngine.Quaternion,System.Object>
-	//System.Collections.Generic.Dictionary`2<GameFrame.Hotfix.GameMode,System.Object>
-	//System.Collections.Generic.Dictionary`2<GameFrame.Hotfix.CampPair,GameFrame.Hotfix.RelationType>
-	//System.Collections.Generic.Dictionary`2<System.Object,System.Byte>
-	//System.Collections.Generic.Dictionary`2<System.Collections.Generic.KeyValuePair`2<GameFrame.Hotfix.CampType,GameFrame.Hotfix.RelationType>,System.Object>
-	//System.Collections.Generic.Dictionary`2<System.Int32,System.Object>
-	//System.Collections.Generic.Dictionary`2/Enumerator<System.Object,System.Byte>
-	//System.Collections.Generic.IEnumerator`1<System.Object>
-	//System.Collections.Generic.KeyValuePair`2<System.Object,System.Byte>
-	//System.Collections.Generic.KeyValuePair`2<GameFrame.Hotfix.CampType,GameFrame.Hotfix.RelationType>
-	//System.Collections.Generic.KeyValuePair`2<System.Int32,System.Int32>
-	//System.Collections.Generic.List`1<System.Single>
-	//System.Collections.Generic.List`1<System.Object>
-	//System.Collections.Generic.List`1<System.Int32>
-	//System.Collections.Generic.List`1<System.Byte>
-	//System.Collections.Generic.List`1<GameFrame.Hotfix.CampType>
-	//System.Comparison`1<System.Int32>
-	//System.EventHandler`1<System.Object>
-	//System.Nullable`1<UnityEngine.Vector3>
-	//System.Nullable`1<System.Int32>
-	//System.Predicate`1<System.Object>
-	//TMPro.FastAction`1<System.Object>
-	//UnityEngine.Events.UnityAction`1<System.Object>
-	//UnityEngine.Events.UnityAction`2<System.UInt16,System.Int32>
-	//UnityEngine.Events.UnityAction`3<System.Object,System.Object,System.Int32>
-	//UnityEngine.Events.UnityAction`3<System.Object,System.Int32,System.Int32>
-	//UnityEngine.Events.UnityEvent`1<System.Object>
-	//UnityEngine.Events.UnityEvent`2<System.UInt16,System.Int32>
-	//UnityEngine.Events.UnityEvent`3<System.Object,System.Object,System.Int32>
-	//UnityEngine.Events.UnityEvent`3<System.Object,System.Int32,System.Int32>
+	// {{ AOT generic types
+	// DG.Tweening.Core.DOGetter<object>
+	// DG.Tweening.Core.DOGetter<UnityEngine.Color>
+	// DG.Tweening.Core.DOGetter<UnityEngine.Vector2>
+	// DG.Tweening.Core.DOGetter<UnityEngine.Quaternion>
+	// DG.Tweening.Core.DOGetter<UnityEngine.Vector3>
+	// DG.Tweening.Core.DOGetter<float>
+	// DG.Tweening.Core.DOSetter<object>
+	// DG.Tweening.Core.DOSetter<UnityEngine.Color>
+	// DG.Tweening.Core.DOSetter<UnityEngine.Vector2>
+	// DG.Tweening.Core.DOSetter<UnityEngine.Quaternion>
+	// DG.Tweening.Core.DOSetter<UnityEngine.Vector3>
+	// DG.Tweening.Core.DOSetter<float>
+	// DG.Tweening.Core.TweenerCore<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions>
+	// DG.Tweening.Core.TweenerCore<UnityEngine.Vector3,object,DG.Tweening.Plugins.Options.PathOptions>
+	// DG.Tweening.Core.TweenerCore<UnityEngine.Quaternion,UnityEngine.Vector3,DG.Tweening.Plugins.Options.QuaternionOptions>
+	// GameFramework.DataTable.IDataTable<object>
+	// GameFramework.Fsm.FsmState<object>
+	// GameFramework.Fsm.IFsm<object>
+	// GameFramework.GameFrameworkAction<object>
+	// GameFramework.ObjectPool.IObjectPool<object>
+	// GameFramework.Variable<byte>
+	// System.Action<object>
+	// System.Action<DG.Tweening.Plugins.Options.PathOptions,object,UnityEngine.Quaternion,object>
+	// System.Collections.Generic.Dictionary<GameFrame.Hotfix.GameMode,object>
+	// System.Collections.Generic.Dictionary<GameFrame.Hotfix.CampPair,GameFrame.Hotfix.RelationType>
+	// System.Collections.Generic.Dictionary<object,byte>
+	// System.Collections.Generic.Dictionary<System.Collections.Generic.KeyValuePair<GameFrame.Hotfix.CampType,GameFrame.Hotfix.RelationType>,object>
+	// System.Collections.Generic.Dictionary<int,object>
+	// System.Collections.Generic.Dictionary.Enumerator<object,byte>
+	// System.Collections.Generic.IEnumerator<object>
+	// System.Collections.Generic.KeyValuePair<object,byte>
+	// System.Collections.Generic.KeyValuePair<GameFrame.Hotfix.CampType,GameFrame.Hotfix.RelationType>
+	// System.Collections.Generic.KeyValuePair<int,int>
+	// System.Collections.Generic.List<float>
+	// System.Collections.Generic.List<object>
+	// System.Collections.Generic.List<int>
+	// System.Collections.Generic.List<byte>
+	// System.Collections.Generic.List<GameFrame.Hotfix.CampType>
+	// System.Comparison<int>
+	// System.EventHandler<object>
+	// System.Nullable<UnityEngine.Vector3>
+	// System.Nullable<int>
+	// System.Predicate<object>
+	// TMPro.FastAction<object>
+	// UnityEngine.Events.UnityAction<object>
+	// UnityEngine.Events.UnityAction<ushort,int>
+	// UnityEngine.Events.UnityAction<object,object,int>
+	// UnityEngine.Events.UnityAction<object,int,int>
+	// UnityEngine.Events.UnityEvent<object>
+	// UnityEngine.Events.UnityEvent<ushort,int>
+	// UnityEngine.Events.UnityEvent<object,object,int>
+	// UnityEngine.Events.UnityEvent<object,int,int>
 	// }}
 
 	public void RefMethods()
 	{
-		// DG.Tweening.Core.TweenerCore`3<UnityEngine.Color,UnityEngine.Color,DG.Tweening.Plugins.Options.ColorOptions> DG.Tweening.Core.Extensions::Blendable<UnityEngine.Color,UnityEngine.Color,DG.Tweening.Plugins.Options.ColorOptions>(DG.Tweening.Core.TweenerCore`3<UnityEngine.Color,UnityEngine.Color,DG.Tweening.Plugins.Options.ColorOptions>)
-		// System.Object DG.Tweening.Core.Extensions::SetSpecialStartupMode<System.Object>(System.Object,DG.Tweening.Core.Enums.SpecialStartupMode)
-		// DG.Tweening.Core.TweenerCore`3<UnityEngine.Vector3,System.Object,DG.Tweening.Plugins.Options.PathOptions> DG.Tweening.DOTween::To<UnityEngine.Vector3,System.Object,DG.Tweening.Plugins.Options.PathOptions>(DG.Tweening.Plugins.Core.ABSTweenPlugin`3<UnityEngine.Vector3,System.Object,DG.Tweening.Plugins.Options.PathOptions>,DG.Tweening.Core.DOGetter`1<UnityEngine.Vector3>,DG.Tweening.Core.DOSetter`1<UnityEngine.Vector3>,System.Object,System.Single)
-		// DG.Tweening.Core.TweenerCore`3<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions> DG.Tweening.DOTween::To<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions>(DG.Tweening.Plugins.Core.ABSTweenPlugin`3<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions>,DG.Tweening.Core.DOGetter`1<UnityEngine.Vector3>,DG.Tweening.Core.DOSetter`1<UnityEngine.Vector3>,UnityEngine.Vector3,System.Single)
-		// System.Object DG.Tweening.TweenExtensions::Pause<System.Object>(System.Object)
-		// System.Object DG.Tweening.TweenExtensions::Play<System.Object>(System.Object)
-		// System.Object DG.Tweening.TweenSettingsExtensions::From<System.Object>(System.Object,System.Boolean)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnComplete<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnKill<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnPlay<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnRewind<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnStart<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnStepComplete<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::OnUpdate<System.Object>(System.Object,DG.Tweening.TweenCallback)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetAutoKill<System.Object>(System.Object,System.Boolean)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetDelay<System.Object>(System.Object,System.Single)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetEase<System.Object>(System.Object,DG.Tweening.Ease)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetEase<System.Object>(System.Object,UnityEngine.AnimationCurve)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetId<System.Object>(System.Object,System.String)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetLoops<System.Object>(System.Object,System.Int32,DG.Tweening.LoopType)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetRelative<System.Object>(System.Object,System.Boolean)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetRelative<System.Object>(System.Object)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetSpeedBased<System.Object>(System.Object)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetTarget<System.Object>(System.Object,System.Object)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetUpdate<System.Object>(System.Object,DG.Tweening.UpdateType)
-		// System.Object DG.Tweening.TweenSettingsExtensions::SetUpdate<System.Object>(System.Object,System.Boolean)
-		// System.Void GameFramework.Fsm.FsmState`1<System.Object>::ChangeState<System.Object>(GameFramework.Fsm.IFsm`1<System.Object>)
-		// System.Object GameFramework.Fsm.IFsm`1<System.Object>::GetData<System.Object>(System.String)
-		// System.Void GameFramework.Fsm.IFsm`1<System.Object>::SetData<System.Object>(System.String,System.Object)
-		// System.Object GameFramework.GameFrameworkEntry::GetModule<System.Object>()
-		// System.Void GameFramework.Network.INetworkChannel::Send<System.Object>(System.Object)
-		// System.Void GameFramework.Procedure.IProcedureManager::StartProcedure<System.Object>()
-		// System.Object GameFramework.ReferencePool::Acquire<System.Object>()
-		// System.String GameFramework.Utility/Text::Format<System.Object>(System.String,System.Object)
-		// System.Object UnityEngine.Component::GetComponent<System.Object>()
-		// System.Object UnityEngine.Component::GetComponentInChildren<System.Object>()
-		// System.Object UnityEngine.Component::GetComponentInParent<System.Object>()
-		// System.Object[] UnityEngine.Component::GetComponents<System.Object>()
-		// System.Void UnityEngine.Component::GetComponentsInChildren<System.Object>(System.Boolean,System.Collections.Generic.List`1<System.Object>)
-		// System.Object[] UnityEngine.Component::GetComponentsInChildren<System.Object>(System.Boolean)
-		// System.Object UnityEngine.GameObject::AddComponent<System.Object>()
-		// System.Object UnityEngine.GameObject::GetComponent<System.Object>()
-		// System.Object UnityEngine.GameObject::GetComponentInParent<System.Object>()
-		// System.Object[] UnityEngine.GameObject::GetComponents<System.Object>()
-		// System.Object UnityEngine.Object::FindObjectOfType<System.Object>()
-		// System.Object UnityEngine.Object::Instantiate<System.Object>(System.Object)
-		// System.Object UnityEngine.Object::Instantiate<System.Object>(System.Object,UnityEngine.Transform)
-		// System.Object UnityEngine.Resources::Load<System.Object>(System.String)
-		// System.Object UnityExtension::GetOrAddComponent<System.Object>(UnityEngine.GameObject)
-		// GameFramework.DataTable.IDataTable`1<System.Object> UnityGameFramework.Runtime.DataTableComponent::GetDataTable<System.Object>()
-		// System.Boolean UnityGameFramework.Runtime.FsmComponent::DestroyFsm<System.Object>()
-		// System.Object UnityGameFramework.Runtime.GameEntry::GetComponent<System.Object>()
-		// System.Void UnityGameFramework.Runtime.Log::Error<System.Object,System.Object,System.Object>(System.String,System.Object,System.Object,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Error<System.Object,System.Object>(System.String,System.Object,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Info<System.Object>(System.String,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Info<System.Object,System.Object>(System.String,System.Object,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Info<System.Object,System.Object,System.Object>(System.String,System.Object,System.Object,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Info<System.Object,System.Object,System.Object,System.Object>(System.String,System.Object,System.Object,System.Object,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Warning<System.Object,System.Object,System.Object>(System.String,System.Object,System.Object,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Warning<System.Object>(System.String,System.Object)
-		// System.Void UnityGameFramework.Runtime.Log::Warning<System.Object,System.Object>(System.String,System.Object,System.Object)
-		// GameFramework.ObjectPool.IObjectPool`1<System.Object> UnityGameFramework.Runtime.ObjectPoolComponent::CreateSingleSpawnObjectPool<System.Object>(System.String,System.Int32)
+		// DG.Tweening.Core.TweenerCore<UnityEngine.Color,UnityEngine.Color,DG.Tweening.Plugins.Options.ColorOptions> DG.Tweening.Core.Extensions.Blendable<UnityEngine.Color,UnityEngine.Color,DG.Tweening.Plugins.Options.ColorOptions>(DG.Tweening.Core.TweenerCore<UnityEngine.Color,UnityEngine.Color,DG.Tweening.Plugins.Options.ColorOptions>)
+		// object DG.Tweening.Core.Extensions.SetSpecialStartupMode<object>(object,DG.Tweening.Core.Enums.SpecialStartupMode)
+		// DG.Tweening.Core.TweenerCore<UnityEngine.Vector3,object,DG.Tweening.Plugins.Options.PathOptions> DG.Tweening.DOTween.To<UnityEngine.Vector3,object,DG.Tweening.Plugins.Options.PathOptions>(DG.Tweening.Plugins.Core.ABSTweenPlugin<UnityEngine.Vector3,object,DG.Tweening.Plugins.Options.PathOptions>,DG.Tweening.Core.DOGetter<UnityEngine.Vector3>,DG.Tweening.Core.DOSetter<UnityEngine.Vector3>,object,float)
+		// DG.Tweening.Core.TweenerCore<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions> DG.Tweening.DOTween.To<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions>(DG.Tweening.Plugins.Core.ABSTweenPlugin<UnityEngine.Vector3,UnityEngine.Vector3,DG.Tweening.Plugins.SpiralOptions>,DG.Tweening.Core.DOGetter<UnityEngine.Vector3>,DG.Tweening.Core.DOSetter<UnityEngine.Vector3>,UnityEngine.Vector3,float)
+		// object DG.Tweening.TweenExtensions.Pause<object>(object)
+		// object DG.Tweening.TweenExtensions.Play<object>(object)
+		// object DG.Tweening.TweenSettingsExtensions.From<object>(object,bool)
+		// object DG.Tweening.TweenSettingsExtensions.OnComplete<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.OnKill<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.OnPlay<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.OnRewind<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.OnStart<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.OnStepComplete<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.OnUpdate<object>(object,DG.Tweening.TweenCallback)
+		// object DG.Tweening.TweenSettingsExtensions.SetAutoKill<object>(object,bool)
+		// object DG.Tweening.TweenSettingsExtensions.SetDelay<object>(object,float)
+		// object DG.Tweening.TweenSettingsExtensions.SetEase<object>(object,DG.Tweening.Ease)
+		// object DG.Tweening.TweenSettingsExtensions.SetEase<object>(object,UnityEngine.AnimationCurve)
+		// object DG.Tweening.TweenSettingsExtensions.SetId<object>(object,string)
+		// object DG.Tweening.TweenSettingsExtensions.SetLoops<object>(object,int,DG.Tweening.LoopType)
+		// object DG.Tweening.TweenSettingsExtensions.SetRelative<object>(object,bool)
+		// object DG.Tweening.TweenSettingsExtensions.SetRelative<object>(object)
+		// object DG.Tweening.TweenSettingsExtensions.SetSpeedBased<object>(object)
+		// object DG.Tweening.TweenSettingsExtensions.SetTarget<object>(object,object)
+		// object DG.Tweening.TweenSettingsExtensions.SetUpdate<object>(object,DG.Tweening.UpdateType)
+		// object DG.Tweening.TweenSettingsExtensions.SetUpdate<object>(object,bool)
+		// System.Void GameFramework.Fsm.FsmState<object>.ChangeState<object>(GameFramework.Fsm.IFsm<object>)
+		// object GameFramework.Fsm.IFsm<object>.GetData<object>(string)
+		// System.Void GameFramework.Fsm.IFsm<object>.SetData<object>(string,object)
+		// object GameFramework.GameFrameworkEntry.GetModule<object>()
+		// System.Void GameFramework.Network.INetworkChannel.Send<object>(object)
+		// System.Void GameFramework.Procedure.IProcedureManager.StartProcedure<object>()
+		// object GameFramework.ReferencePool.Acquire<object>()
+		// string GameFramework.Utility.Text.Format<object>(string,object)
+		// object UnityEngine.Component.GetComponent<object>()
+		// object UnityEngine.Component.GetComponentInChildren<object>()
+		// object UnityEngine.Component.GetComponentInParent<object>()
+		// object[] UnityEngine.Component.GetComponents<object>()
+		// System.Void UnityEngine.Component.GetComponentsInChildren<object>(bool,System.Collections.Generic.List<object>)
+		// object[] UnityEngine.Component.GetComponentsInChildren<object>(bool)
+		// object UnityEngine.GameObject.AddComponent<object>()
+		// object UnityEngine.GameObject.GetComponent<object>()
+		// object UnityEngine.GameObject.GetComponentInParent<object>()
+		// object[] UnityEngine.GameObject.GetComponents<object>()
+		// object UnityEngine.Object.FindObjectOfType<object>()
+		// object UnityEngine.Object.Instantiate<object>(object)
+		// object UnityEngine.Object.Instantiate<object>(object,UnityEngine.Transform)
+		// object UnityEngine.Resources.Load<object>(string)
+		// object UnityExtension.GetOrAddComponent<object>(UnityEngine.GameObject)
+		// GameFramework.DataTable.IDataTable<object> UnityGameFramework.Runtime.DataTableComponent.GetDataTable<object>()
+		// bool UnityGameFramework.Runtime.FsmComponent.DestroyFsm<object>()
+		// object UnityGameFramework.Runtime.GameEntry.GetComponent<object>()
+		// System.Void UnityGameFramework.Runtime.Log.Error<object,object,object>(string,object,object,object)
+		// System.Void UnityGameFramework.Runtime.Log.Error<object,object>(string,object,object)
+		// System.Void UnityGameFramework.Runtime.Log.Info<object>(string,object)
+		// System.Void UnityGameFramework.Runtime.Log.Info<object,object>(string,object,object)
+		// System.Void UnityGameFramework.Runtime.Log.Info<object,object,object>(string,object,object,object)
+		// System.Void UnityGameFramework.Runtime.Log.Info<object,object,object,object>(string,object,object,object,object)
+		// System.Void UnityGameFramework.Runtime.Log.Warning<object,object,object>(string,object,object,object)
+		// System.Void UnityGameFramework.Runtime.Log.Warning<object>(string,object)
+		// System.Void UnityGameFramework.Runtime.Log.Warning<object,object>(string,object,object)
+		// GameFramework.ObjectPool.IObjectPool<object> UnityGameFramework.Runtime.ObjectPoolComponent.CreateSingleSpawnObjectPool<object>(string,int)
 	}
 }

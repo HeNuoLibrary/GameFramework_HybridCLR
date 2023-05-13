@@ -6,7 +6,7 @@
       <Resource Name="DataTables" FileSystem="GameData" LoadType="0" Packed="True" ResourceGroups="Base" />
       <Resource Name="Entities" FileSystem="Resources" LoadType="0" Packed="True" />
       <Resource Name="Fonts" FileSystem="UI" LoadType="0" Packed="True" ResourceGroups="Base" />
-      <Resource Name="HotFixDll" FileSystem="HotFixDll" LoadType="0" Packed="True" />
+      <Resource Name="HotAssemblies" FileSystem="HotAssemblies" LoadType="0" Packed="True" ResourceGroups="Base" />
       <Resource Name="Localization/Dictionaries" Variant="en-us" FileSystem="UI" LoadType="0" Packed="True" ResourceGroups="Base" />
       <Resource Name="Localization/Dictionaries" Variant="ko-kr" FileSystem="UI" LoadType="0" Packed="True" ResourceGroups="Base" />
       <Resource Name="Localization/Dictionaries" Variant="zh-cn" FileSystem="UI" LoadType="0" Packed="True" ResourceGroups="Base" />
@@ -38,6 +38,7 @@
       <Asset Guid="0ed73dc47f4cb38489020d05e9f02c99" ResourceName="Materials" />
       <Asset Guid="0f995b3145e0e7247a42da6cef1dbf23" ResourceName="Materials" />
       <Asset Guid="1053b0070685be347ab58587156842dc" ResourceName="Localization/Dictionaries" ResourceVariant="zh-tw" />
+      <Asset Guid="10a360aede8732244aaef2daa5e790de" ResourceName="HotAssemblies" />
       <Asset Guid="11e27c26ac87b40f0a62ec40d7261989" ResourceName="Entities" />
       <Asset Guid="1478894bc9a1ed241b05b0862a7b8bce" ResourceName="Textures" />
       <Asset Guid="14869ac0d4433f04db1704e39d03412e" ResourceName="Localization/Dictionaries" ResourceVariant="en-us" />
@@ -54,20 +55,19 @@
       <Asset Guid="239366f83979ffa48a45dac2f0f1e8cb" ResourceName="DataTables" />
       <Asset Guid="24ca310f92a6796408f1db7647ec4e55" ResourceName="UI/UISprites/Common" />
       <Asset Guid="2768a9a4c8d289840918dcb879705893" ResourceName="Meshes" />
+      <Asset Guid="2b34da4aa559aba48a764ecb451e5cf3" ResourceName="Prefabs" />
       <Asset Guid="2cb5eef4d7d7bf6459dd13a3f8d90246" ResourceName="Textures" />
       <Asset Guid="315e8ed2db27c254cb3366ff0793cd90" ResourceName="DataTables" />
       <Asset Guid="3455fe69f7ddc4604b95bf9b0a1e88d7" ResourceName="Entities" />
       <Asset Guid="352da872791696c48af3b21132e3e3c3" ResourceName="DataTables" />
       <Asset Guid="372a8b1e52bedc64b9207b12d167afaa" ResourceName="DataTables" />
       <Asset Guid="3aa539b1e46111d4299a83c73ebe762c" ResourceName="UI/UIForms" />
-      <Asset Guid="3b15b82062779cd4389ae101d7e38aeb" ResourceName="HotFixDll" />
       <Asset Guid="3be3fac3611f4584695662c4889f722d" ResourceName="UI/UISprites/Common" />
       <Asset Guid="3dc7455402dfa462b89a4bbd513955e9" ResourceName="Sounds" />
       <Asset Guid="3e504a46a8fcec34db3c4776530c6eb2" ResourceName="Textures" />
       <Asset Guid="3f54fcfdac53aec42ae18a6a1c6d8cb1" ResourceName="UI/UISprites/Common" />
       <Asset Guid="4473d81b14ddb0143addf0e6050d8491" ResourceName="Scenes" />
       <Asset Guid="44c8db52241385c45bbb14a1718f17bf" ResourceName="Configs" />
-      <Asset Guid="4704a2eb35d53e548aaf6b8f95db6bc7" ResourceName="HotFixDll" />
       <Asset Guid="4a17d2c656f5c6b44a31e3ee547a76b0" ResourceName="DataTables" />
       <Asset Guid="4c3865b2ac420cd46a9cde6ab468d016" ResourceName="Materials" />
       <Asset Guid="4db6a299939bfe94893585eb387f577a" ResourceName="DataTables" />
@@ -104,6 +104,7 @@
       <Asset Guid="8e114ded6a865324588170636872943c" ResourceName="DataTables" />
       <Asset Guid="8e27380ee68aa4a219b4db9018e7da31" ResourceName="Materials" />
       <Asset Guid="9143e2b62ad50488482f9b73672fc331" ResourceName="Entities" />
+      <Asset Guid="9411609fcea31374196095a7f04d1bc2" ResourceName="HotAssemblies" />
       <Asset Guid="955000b4d1441470e8cbf94f483228b5" ResourceName="Materials" />
       <Asset Guid="97b1f8b25cca2bc458cb9d6127c8d186" ResourceName="Materials" />
       <Asset Guid="97d117308cf86924289e81e7e71dd5dd" ResourceName="DataTables" />
@@ -115,14 +116,12 @@
       <Asset Guid="9ddab293e2a8af3499dac05f5fd6169c" ResourceName="Meshes" />
       <Asset Guid="9f847ec5e66e03e4ead1d3c5f7b510e8" ResourceName="UI/UISprites/Common" />
       <Asset Guid="a019ae3af8e864616b85773c509f5285" ResourceName="Sounds" />
-      <Asset Guid="a0a707dd151440a4482167bd82b6a207" ResourceName="HotFixDll" />
       <Asset Guid="a23eef5e20ff8cb46adf33491fc443fb" ResourceName="Materials" />
       <Asset Guid="a33e23ae848110243820cda82120b105" ResourceName="DataTables" />
       <Asset Guid="a6d58f54ce5934781962a4f887e834f3" ResourceName="Entities" />
       <Asset Guid="a71f8bb1b1b2c51438e2bafc884cb02c" ResourceName="DataTables" />
       <Asset Guid="a7b030cffa2dc44478c14e49a22771c2" ResourceName="Materials" />
       <Asset Guid="a8c07bbe04fdaf04b80e27f651a8edd6" ResourceName="UI/UISprites/Common" />
-      <Asset Guid="aa7e94cfb09ca6f47b10c1b3b6dc8c18" ResourceName="HotFixDll" />
       <Asset Guid="ab45c3f613f388d43bbf43ec05eb92e2" ResourceName="UI/UISprites/Common" />
       <Asset Guid="ab4774faf71b57a40a29a9e902403fe3" ResourceName="DataTables" />
       <Asset Guid="abd1565e9e268f04cac3631d022b4ace" ResourceName="Entities" />
@@ -137,6 +136,7 @@
       <Asset Guid="baedbbad82997f445a8cb4da210404e0" ResourceName="Meshes" />
       <Asset Guid="bbfd75fe6fe00e1448fe988173ede7f9" ResourceName="UI/UIForms" />
       <Asset Guid="bf75b984df8a84987bcf3a8bf6e2862d" ResourceName="Sounds" />
+      <Asset Guid="c46f657b6085d6147be1de63fd209fbe" ResourceName="HotAssemblies" />
       <Asset Guid="c547624e174de984882f0a14b4bb32e1" ResourceName="Materials" />
       <Asset Guid="c58c9afddbd36d14d837fa218d772996" ResourceName="Materials" />
       <Asset Guid="c7d1e11dd37634b48a9dd4012b8e4306" ResourceName="UI/UISounds" />
@@ -145,10 +145,9 @@
       <Asset Guid="cfe53cf384344bd47a8680f8c5f97a7b" ResourceName="DataTables" />
       <Asset Guid="d9808401c68af274a8edfbed3d1b53c7" ResourceName="Meshes" />
       <Asset Guid="db58965402f12ed47b4dad61a9e48c9d" ResourceName="UI/UISprites/Icons" />
-      <Asset Guid="dc0efe7e56bc64f4ab0ecebc419a6364" ResourceName="HotFixDll" />
-      <Asset Guid="dcbfdf03cc17fea46a1464b0ff0b00d4" ResourceName="HotFixDll" />
       <Asset Guid="e0792649e7774a24d8e7cceba0231c61" ResourceName="DataTables" />
       <Asset Guid="e5ca26c53b6ab8a46b52817008d7c7fa" ResourceName="UI/UISprites/Icons" />
+      <Asset Guid="e72c03504817bd2478b6a1db1ea347af" ResourceName="HotAssemblies" />
       <Asset Guid="e82837c9099f69a48b48fc44eb8d119d" ResourceName="UI/UISprites/Common" />
       <Asset Guid="e830964cdb85ff3429bca484c16bab44" ResourceName="UI/UISounds" />
       <Asset Guid="e85864330b68dde498dcb6e8711815d3" ResourceName="UI/UISprites/Common" />
@@ -161,6 +160,7 @@
       <Asset Guid="f6db5bbdfe0e9894798706814cd6b336" ResourceName="Textures" />
       <Asset Guid="fd3cbf51780694849b9b019b36a3938e" ResourceName="Textures" />
       <Asset Guid="fdb5edd099d06b045af609ba3172400a" ResourceName="DataTables" />
+      <Asset Guid="fde3d728b0c3dd845957480e96ee10c7" ResourceName="HotAssemblies" />
       <Asset Guid="fedd25a3c60e7ae499fc6efab9ee180b" ResourceName="Entities" />
     </Assets>
   </ResourceCollection>

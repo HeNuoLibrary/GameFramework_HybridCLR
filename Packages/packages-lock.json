@@ -1,16 +1,15 @@
 {
   "dependencies": {
     "com.focus-creative-games.hybridclr_unity": {
-      "version": "https://github.com/HeNuoLibrary/hybridclr_unity.git",
+      "version": "file:hybridclr_unity",
       "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "bead954c3cdebcf6f1564393908b13c7bc1452c0"
+      "source": "embedded",
+      "dependencies": {}
     },
     "com.henuo.gameframework": {
-      "version": "https://github.com/HeNuoLibrary/UnityGameFramework.git",
+      "version": "file:UnityGameFramework",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.androidjni": "1.0.0",
         "com.unity.modules.animation": "1.0.0",
@@ -19,25 +18,13 @@
         "com.unity.modules.imgui": "1.0.0",
         "com.unity.modules.jsonserialize": "1.0.0",
         "com.unity.modules.unitywebrequest": "1.0.0"
-      },
-      "hash": "c08699fd2e42ae70bd64d3a539bd2b3eccc4d57e"
-    },
-    "com.henuo.loopscrollrect": {
-      "version": "https://github.com/HeNuoLibrary/LoopScrollRect.git",
-      "depth": 0,
-      "source": "git",
-      "dependencies": {
-        "com.unity.ugui": "1.0.0"
-      },
-      "hash": "34612d164454d8eab83ce7d15900dfe14282cb06"
+      }
     },
     "com.unity.collab-proxy": {
-      "version": "1.15.15",
+      "version": "2.0.3",
       "depth": 0,
       "source": "registry",
-      "dependencies": {
-        "com.unity.services.core": "1.0.1"
-      },
+      "dependencies": {},
       "url": "https://packages.unity.cn"
     },
     "com.unity.editorcoroutines": {
@@ -59,17 +46,17 @@
       "depth": 0,
       "source": "builtin",
       "dependencies": {
-        "com.unity.ide.visualstudio": "2.0.14",
-        "com.unity.ide.rider": "3.0.13",
+        "com.unity.ide.visualstudio": "2.0.17",
+        "com.unity.ide.rider": "3.0.18",
         "com.unity.ide.vscode": "1.2.5",
         "com.unity.editorcoroutines": "1.0.0",
-        "com.unity.performance.profile-analyzer": "1.1.1",
+        "com.unity.performance.profile-analyzer": "1.2.2",
         "com.unity.test-framework": "1.1.31",
-        "com.unity.testtools.codecoverage": "1.0.1"
+        "com.unity.testtools.codecoverage": "1.2.2"
       }
     },
     "com.unity.ide.rider": {
-      "version": "3.0.13",
+      "version": "3.0.18",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -78,7 +65,7 @@
       "url": "https://packages.unity.cn"
     },
     "com.unity.ide.visualstudio": {
-      "version": "2.0.14",
+      "version": "2.0.17",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -94,19 +81,10 @@
       "url": "https://packages.unity.cn"
     },
     "com.unity.performance.profile-analyzer": {
-      "version": "1.1.1",
+      "version": "1.2.2",
       "depth": 1,
       "source": "registry",
       "dependencies": {},
-      "url": "https://packages.unity.cn"
-    },
-    "com.unity.services.core": {
-      "version": "1.0.1",
-      "depth": 1,
-      "source": "registry",
-      "dependencies": {
-        "com.unity.modules.unitywebrequest": "1.0.0"
-      },
       "url": "https://packages.unity.cn"
     },
     "com.unity.settings-manager": {
@@ -128,7 +106,7 @@
       "url": "https://packages.unity.cn"
     },
     "com.unity.testtools.codecoverage": {
-      "version": "1.0.1",
+      "version": "1.2.2",
       "depth": 1,
       "source": "registry",
       "dependencies": {
@@ -168,7 +146,7 @@
       }
     },
     "com.unity.visualscripting": {
-      "version": "1.7.6",
+      "version": "1.8.0",
       "depth": 0,
       "source": "registry",
       "dependencies": {

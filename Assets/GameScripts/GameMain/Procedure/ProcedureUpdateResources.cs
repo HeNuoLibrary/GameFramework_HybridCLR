@@ -86,7 +86,7 @@ namespace GameFrame.Main
                 return;
             }
 
-            ChangeState<ProcedureToHuaTuo>(procedureOwner);
+            ChangeState<ProcedureHybridCLR>(procedureOwner);
         }
 
         private void StartUpdateResources(object userData)

@@ -9,11 +9,12 @@ using System.Collections.Generic;
 using GameFramework.Procedure;
 using GameFramework.Fsm;
 using GameFramework;
+using UnityEngine;
 
 namespace GameFrame.Hotfix
 {
 
-    public class GameHotfixEntry
+    public class GameHotfixEntry : MonoBehaviour
     {
         public static HPBarComponent HPBar
         {
@@ -21,7 +22,7 @@ namespace GameFrame.Hotfix
             private set;
         }
 
-        public static void Awake()
+        public void Awake()
         {
             Log.Info("=======hello, HybridCLR 看到此条日志代表你成功运行了示例项目的热更新代码=======");
             Log.Info("<color=green> GameHotfixEntry.Awake </color>");
@@ -34,16 +35,18 @@ namespace GameFrame.Hotfix
                 new ProcedureMain(),
                 new ProcedureMenu(),
                 new ProcedurePreload(),
-                new ProcedureHuatuoLaunch(),
+                new ProcedureHybridCLRLaunch(),
             };
             procedureManager.Initialize(GameFrameworkEntry.GetModule<IFsmManager>(), procedures);
             procedureManager.StartProcedure<ProcedurePreload>();
         }
 
-        public static void Start()
+        public static void HotfixStart()
         {
             Log.Info("<color=green> GameHotfixEntry.Start </color>");
             HPBar = UnityGameFramework.Runtime.GameEntry.GetComponent<HPBarComponent>();
+
+            Debug.Log($"-----------{HPBar}-----------");
         }
     }
 }

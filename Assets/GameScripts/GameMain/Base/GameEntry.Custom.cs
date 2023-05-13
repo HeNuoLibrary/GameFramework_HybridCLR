@@ -20,16 +20,9 @@ namespace GameFrame.Main
             private set;
         }
 
-        public static HuatuoComponent Huatuo
-        {
-            get;
-            private set;
-        }
-
         private static void InitCustomComponents()
         {
             BuiltinData = UnityGameFramework.Runtime.GameEntry.GetComponent<BuiltinDataComponent>();
-            Huatuo = UnityGameFramework.Runtime.GameEntry.GetComponent<HuatuoComponent>();
         }
     }
 }

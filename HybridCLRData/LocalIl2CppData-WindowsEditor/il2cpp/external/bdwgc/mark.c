@@ -116,7 +116,6 @@ GC_INNER size_t GC_mark_stack_size = 0;
 GC_INNER mark_state_t GC_mark_state = MS_NONE;
 
 GC_INNER GC_bool GC_mark_stack_too_small = FALSE;
-GC_INNER GC_bool GC_mark_stack_empty_called = FALSE;
 
 static struct hblk * scan_ptr;
 
@@ -407,18 +406,16 @@ static void alloc_mark_stack(size_t);
                     return(TRUE);
                 } else {
                   GC_mark_stack_empty_proc mark_stack_empty_proc = GC_get_mark_stack_empty();
-                  if (GC_mark_stack_empty_called || !mark_stack_empty_proc) {
-                    GC_mark_state = MS_NONE;
-                    GC_mark_stack_empty_called = FALSE;
-                    return(TRUE);
-                  } else {
-                    if (mark_stack_empty_proc != 0)
-                      mark_stack_empty_proc();
-
-                    /* break below here loops us around the mark phase once again */
-                    /* to process any items push by the callback */
-                    GC_mark_stack_empty_called = TRUE;
+                  if (mark_stack_empty_proc) {
+                      GC_mark_stack_top = mark_stack_empty_proc(GC_mark_stack_top, GC_mark_stack_limit);
                   }
+                  /* if we pushed new items or overflowed stack we need to continue processing */
+                  if (((word)GC_mark_stack_top >= (word)GC_mark_stack) || GC_mark_stack_too_small) {
+                      break;
+                  }
+
+                  GC_mark_state = MS_NONE;
+                  return(TRUE);
                 }
                 break;
             }

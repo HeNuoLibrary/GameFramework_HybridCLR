@@ -2678,7 +2678,7 @@ buffer_add_assemblyid (Buffer *buf, MonoDomain *domain, MonoAssembly *assembly)
 
 	id = buffer_add_ptr_id (buf, domain, ID_ASSEMBLY, assembly);
 	if (G_UNLIKELY (log_level >= 2) && assembly)
-		DEBUG_PRINTF (2, "[dbg]   send assembly [%s][%s][%d]\n", assembly->aname.name, domain->friendly_name, id);
+		DEBUG_PRINTF (2, "[dbg]   send assembly [%s][%s][%d]\n", assembly->aname.name, VM_DOMAIN_GET_FRIENDLY_NAME(domain), id);
 }
 
 static inline void
@@ -4391,7 +4391,7 @@ appdomain_start_unload (MonoProfiler *prof, MonoDomain *domain)
 	 */
 	tls = (DebuggerTlsData *)mono_native_tls_get_value (debugger_tls_id);
 	g_assert (tls);
-	tls->domain_unloading = domain;
+	mono_gc_wbarrier_generic_store((void**)&tls->domain_unloading, domain);
 }
 
 static void
@@ -4404,7 +4404,7 @@ appdomain_unload (MonoProfiler *prof, MonoDomain *domain)
 
 	tls = (DebuggerTlsData *)mono_native_tls_get_value (debugger_tls_id);
 	g_assert (tls);
-	tls->domain_unloading = NULL;
+	mono_gc_wbarrier_generic_store((void**)&tls->domain_unloading, NULL);
 
 	clear_breakpoints_for_domain (domain);
 	
@@ -9523,7 +9523,7 @@ domain_commands (int command, guint8 *p, guint8 *end, Buffer *buf)
 		domain = decode_domainid (p, &p, end, NULL, &err);
 		if (err != ERR_NONE)
 			return err;
-		buffer_add_string (buf, domain->friendly_name);
+		buffer_add_string (buf, VM_DOMAIN_GET_FRIENDLY_NAME(domain));
 		break;
 	}
 	case CMD_APPDOMAIN_GET_ASSEMBLIES: {
@@ -9556,6 +9556,9 @@ domain_commands (int command, guint8 *p, guint8 *end, Buffer *buf)
 		break;
 	}
 	case CMD_APPDOMAIN_GET_ENTRY_ASSEMBLY: {
+#ifndef RUNTIME_IL2CPP
+		return ERR_NOT_IMPLEMENTED;
+#else
 		domain = decode_domainid (p, &p, end, NULL, &err);
 		if (err != ERR_NONE)
 			return err;
@@ -9565,6 +9568,7 @@ domain_commands (int command, guint8 *p, guint8 *end, Buffer *buf)
 		buffer_add_assemblyid (buf, domain, domain->entry_assembly);
 #endif // RUNTIME_IL2CPP
 		break;
+#endif
 	}
 	case CMD_APPDOMAIN_GET_CORLIB: {
 		domain = decode_domainid (p, &p, end, NULL, &err);

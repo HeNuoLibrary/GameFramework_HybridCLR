@@ -1,43 +1,43 @@
 #include "CommonDef.h"
 
-#include "metadata/AOTHomologousImage.h"
-#include "HybridCLRConfig.h"
+#include "metadata/MetadataModule.h"
+#include "Config.h"
 
 extern "C"
 {
 
-	IL2CPP_EXPORT int32_t DEFAULT_CALL RuntimeApi_LoadMetadataForAOTAssembly(void* dllBytes, uint32_t dllSize)
+	IL2CPP_EXPORT int32_t DEFAULT_CALL RuntimeApi_LoadMetadataForAOTAssembly(void* dllBytes, uint32_t dllSize, int32_t mode)
 	{
-		return hybridclr::metadata::AOTHomologousImage::LoadMetadataForAOTAssembly(dllBytes, dllSize);
+		return (int32_t)hybridclr::metadata::MetadataModule::LoadMetadataForAOTAssembly(dllBytes, dllSize, (hybridclr::metadata::HomologousImageMode)mode);
 	}
 
 	IL2CPP_EXPORT uint32_t DEFAULT_CALL RuntimeApi_GetInterpreterThreadObjectStackSize()
 	{
-		return hybridclr::HybridCLRConfig::GetIns().GetInterpreterThreadObjectStackSize();
+		return hybridclr::Config::GetIns().GetInterpreterThreadObjectStackSize();
 	}
 
 	IL2CPP_EXPORT void DEFAULT_CALL RuntimeApi_SetInterpreterThreadObjectStackSize(uint32_t size)
 	{
-		hybridclr::HybridCLRConfig::GetIns().SetInterpreterThreadObjectStackSize(size);
+		hybridclr::Config::GetIns().SetInterpreterThreadObjectStackSize(size);
 	}
 
 	IL2CPP_EXPORT uint32_t DEFAULT_CALL RuntimeApi_GetInterpreterThreadFrameStackSize()
 	{
-		return hybridclr::HybridCLRConfig::GetIns().GetInterpreterThreadFrameStackSize();
+		return hybridclr::Config::GetIns().GetInterpreterThreadFrameStackSize();
 	}
 
 	IL2CPP_EXPORT void DEFAULT_CALL RuntimeApi_SetInterpreterThreadFrameStackSize(uint32_t size)
 	{
-		hybridclr::HybridCLRConfig::GetIns().SetInterpreterThreadFrameStackSize(size);
+		hybridclr::Config::GetIns().SetInterpreterThreadFrameStackSize(size);
 	}
 
 	IL2CPP_EXPORT uint32_t DEFAULT_CALL RuntimeApi_GetInterpreterThreadExceptionFlowSize()
 	{
-		return hybridclr::HybridCLRConfig::GetIns().GetInterpreterThreadExceptionFlowSize();
+		return hybridclr::Config::GetIns().GetInterpreterThreadExceptionFlowSize();
 	}
 
 	IL2CPP_EXPORT void DEFAULT_CALL RuntimeApi_SetInterpreterThreadExceptionFlowSize(uint32_t size)
 	{
-		hybridclr::HybridCLRConfig::GetIns().SetInterpreterThreadExceptionFlowSize(size);
+		hybridclr::Config::GetIns().SetInterpreterThreadExceptionFlowSize(size);
 	}
 }

@@ -32,7 +32,7 @@ namespace GameFrame.Main
             {
                 // 编辑器模式
                 Log.Info("Editor resource mode detected.");
-                ChangeState<ProcedureToHuaTuo>(procedureOwner);
+                ChangeState<ProcedureHybridCLR>(procedureOwner);
             }
             else if (GameEntry.Resource.ResourceMode == ResourceMode.Package)
             {

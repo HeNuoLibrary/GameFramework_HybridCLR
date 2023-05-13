@@ -106,10 +106,20 @@ EXTERN_C_BEGIN
 
 /* And one for QNX: */
 # if defined(__QNX__)
-#    define I386
+#    define QNX_STACKBOTTOM 1
+#    if defined(__aarch64__)
+#        define AARCH64
+#    elif defined(__arm__) || defined(__ARM__)
+#        define ARM32
+#    elif defined(__amd64) || defined(__X86_64__)
+#        define X86_64
+#    elif defined(__X86__)
+#        define I386
+#    else
+#        error Unknown QNX target architecture detected.
+#    endif
 #    define OS_TYPE "QNX"
 #    define SA_RESTART 0
-#    define HEURISTIC1
      extern char etext[];
      extern int _end[];
 #    define DATASTART ((ptr_t)(etext))
@@ -155,7 +165,7 @@ EXTERN_C_BEGIN
 # if defined(__aarch64__)
 #    define AARCH64
 #    if !defined(LINUX) && !defined(DARWIN) && !defined(FREEBSD) \
-        && !defined(NN_BUILD_TARGET_PLATFORM_NX)
+        && !defined(NN_BUILD_TARGET_PLATFORM_NX) && !defined(__QNX__)
 #      define NOSYS
 #      define mach_type_known
 #    endif
@@ -169,7 +179,7 @@ EXTERN_C_BEGIN
           && !defined(__CEGCC__) && !defined(NN_PLATFORM_CTR) \
           && !defined(NN_BUILD_TARGET_PLATFORM_NX) \
           && !defined(GC_NO_NOSYS) && !defined(SN_TARGET_PSP2) \
-          && !defined(SYMBIAN)
+          && !defined(SYMBIAN) && !defined(__QNX__)
 #      define NOSYS
 #      define mach_type_known
 #    endif
@@ -1530,6 +1540,8 @@ EXTERN_C_BEGIN
 #   endif
 #   ifdef CYGWIN32
 #       define OS_TYPE "CYGWIN32"
+#       define WOW64_THREAD_CONTEXT_WORKAROUND
+#       define RETRY_GET_THREAD_CONTEXT
 #       define DATASTART ((ptr_t)GC_DATASTART)  /* From gc.h */
 #       define DATAEND   ((ptr_t)GC_DATAEND)
 #       undef STACK_GRAN
@@ -1548,6 +1560,8 @@ EXTERN_C_BEGIN
 #   endif
 #   ifdef MSWIN32
 #       define OS_TYPE "MSWIN32"
+#       define WOW64_THREAD_CONTEXT_WORKAROUND
+#       define RETRY_GET_THREAD_CONTEXT
                 /* STACKBOTTOM and DATASTART are handled specially in   */
                 /* os_dep.c.                                            */
 #       define MPROTECT_VDB
@@ -2748,6 +2762,24 @@ EXTERN_C_BEGIN
 #         define HEAP_START DATAEND
 #       endif
 #   endif
+#   ifdef CYGWIN32
+#       define OS_TYPE "CYGWIN32"
+#       define RETRY_GET_THREAD_CONTEXT
+#       ifdef USE_WINALLOC
+#         define GWW_VDB
+#       else
+#         if defined(THREAD_LOCAL_ALLOC)
+            /* TODO: For an unknown reason, thread-local allocations    */
+            /* lead to spurious process exit after the fault handler is */
+            /* once invoked.                                            */
+#         else
+#           define MPROTECT_VDB
+#         endif
+#         ifdef USE_MMAP
+#           define USE_MMAP_ANON
+#         endif
+#       endif
+#   endif
 #   ifdef MSWIN_XBOX1
 #     define NO_GETENV
 #     define DATASTART (ptr_t)ALIGNMENT
@@ -2769,6 +2801,7 @@ EXTERN_C_BEGIN
 #   endif
 #   ifdef MSWIN32
 #       define OS_TYPE "MSWIN32"
+#       define RETRY_GET_THREAD_CONTEXT
                 /* STACKBOTTOM and DATASTART are handled specially in   */
                 /* os_dep.c.                                            */
 #       if !defined(__GNUC__) || defined(__INTEL_COMPILER) \
@@ -2861,6 +2894,10 @@ EXTERN_C_BEGIN
 #if defined(__GLIBC__) && !defined(DONT_USE_LIBC_PRIVATES)
   /* Use glibc's stack-end marker. */
 # define USE_LIBC_PRIVATES
+#endif
+
+#ifdef NO_RETRY_GET_THREAD_CONTEXT
+# undef RETRY_GET_THREAD_CONTEXT
 #endif
 
 #if defined(LINUX_STACKBOTTOM) && defined(NO_PROC_STAT) \
@@ -3022,7 +3059,7 @@ EXTERN_C_BEGIN
 #if defined(SVR4) || defined(LINUX) || defined(IRIX5) || defined(HPUX) \
     || defined(OPENBSD) || defined(NETBSD) || defined(FREEBSD) \
     || defined(DGUX) || defined(BSD) || defined(HAIKU) || defined(HURD) \
-    || defined(AIX) || defined(DARWIN) || defined(OSF1)
+    || defined(AIX) || defined(DARWIN) || defined(OSF1) || defined(__QNX__)
 # define UNIX_LIKE      /* Basic Unix-like system calls work.   */
 #endif
 
@@ -3146,7 +3183,7 @@ EXTERN_C_BEGIN
 
 #if ((defined(UNIX_LIKE) && (defined(DARWIN) || defined(HAIKU) \
                              || defined(HURD) || defined(OPENBSD) \
-                             || defined(ARM32) \
+                             || defined(ARM32) || defined(__QNX__) \
                              || defined(AVR32) || defined(MIPS) \
                              || defined(NIOS2) || defined(OR1K))) \
      || (defined(LINUX) && !defined(__gnu_linux__)) \

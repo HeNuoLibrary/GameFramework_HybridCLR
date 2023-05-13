@@ -47,7 +47,7 @@ namespace GameFrame.Main
             }
             else
             {
-                ChangeState<ProcedureToHuaTuo>(procedureOwner);
+                ChangeState<ProcedureHybridCLR>(procedureOwner);
             }
         }
 

@@ -63,12 +63,12 @@ namespace GameFrame.Main
 
         public static string GetHotDllAsset(string assetName)
         {
-            return Utility.Text.Format("Assets/GameMain/HotFixDll/{0}.bytes", assetName);
+            return Utility.Text.Format("Assets/GameMain/HotAssemblies/HotDll/{0}.bytes", assetName);
         }
 
         public static string GetAOTDllAsset(string assetName)
         {
-            return Utility.Text.Format("Assets/GameMain/HotFixDll/AOT/{0}.bytes", assetName);
+            return Utility.Text.Format("Assets/GameMain/HotAssemblies/AOT/{0}.bytes", assetName);
         }
 
         public static string GetPerfabsAsset(string assetName)

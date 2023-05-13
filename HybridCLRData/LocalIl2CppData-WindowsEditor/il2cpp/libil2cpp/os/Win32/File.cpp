@@ -19,7 +19,7 @@
 #include "utils/PathUtils.h"
 
 #if IL2CPP_TARGET_WINRT
-#include "os/WinRT/BrokeredFileSystem.h"
+#include "os/BrokeredFileSystem.h"
 #endif
 
 #include <stdint.h>
@@ -584,7 +584,7 @@ namespace os
             *error = FileWin32ErrorToErrorCode(::GetLastError());
     }
 
-    bool File::DuplicateHandle(FileHandle* source_process_handle, FileHandle* source_handle, FileHandle* target_process_handle,
+    utils::Expected<bool> File::DuplicateHandle(FileHandle* source_process_handle, FileHandle* source_handle, FileHandle* target_process_handle,
         FileHandle** target_handle, int access, int inherit, int options, int* error)
     {
         /* This is only used on Windows */

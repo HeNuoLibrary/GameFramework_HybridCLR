@@ -1,12 +1,7 @@
 #pragma once
-#include "../hybridclr-compatible-config.h"
 
 #include "il2cpp-config.h"
 #include "il2cpp-class-internals.h"
-
-#if HYBRIDCLR_UNITY_2010_OR_NEW
-#include "Baselib.h"
-#endif
 
 #include "vm/Array.h"
 #include "vm/Type.h"
@@ -80,6 +75,8 @@
 namespace hybridclr
 {
 
+	extern const char* g_placeHolderAssemblies[];
+
 	Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointerSlow(MethodInfo* method);
 
 	inline Il2CppMethodPointer InitAndGetInterpreterDirectlyCallMethodPointer(const MethodInfo* method)
@@ -94,6 +91,21 @@ namespace hybridclr
 			return methodPointer;
 		}
 		return InitAndGetInterpreterDirectlyCallMethodPointerSlow(const_cast<MethodInfo*>(method));
+	}
+
+	inline Il2CppMethodPointer InitAndGetInterpreterDirectlyCallVirtualMethodPointer(const MethodInfo* method)
+	{
+		Il2CppMethodPointer methodPointer = method->virtualMethodPointerCallByInterp;
+		if (methodPointer)
+		{
+			return methodPointer;
+		}
+		if (method->initInterpCallMethodPointer)
+		{
+			return methodPointer;
+		}
+		InitAndGetInterpreterDirectlyCallMethodPointerSlow(const_cast<MethodInfo*>(method));
+		return method->virtualMethodPointerCallByInterp;
 	}
 }
 
@@ -141,7 +153,10 @@ namespace hybridclr
 
 	inline void ConstructDelegate(Il2CppDelegate* delegate, Il2CppObject* target, const MethodInfo* method)
 	{
-		il2cpp::vm::Type::ConstructDelegate(delegate, target, InitAndGetInterpreterDirectlyCallMethodPointer(method), method);
+		delegate->method_ptr = InitAndGetInterpreterDirectlyCallVirtualMethodPointer(method);
+		delegate->method = method;
+		delegate->target = target;
+		//il2cpp::vm::Type::ConstructDelegate(delegate, target, InitAndGetInterpreterDirectlyCallMethodPointer(method), method);
 	}
 
 	inline const MethodInfo* GetGenericVirtualMethod(const MethodInfo* result, const MethodInfo* inflateMethod)
@@ -214,7 +229,7 @@ namespace hybridclr
 	{
 		delegate->target = target;
 		delegate->method = method;
-		delegate->invoke_impl = InitAndGetInterpreterDirectlyCallMethodPointer(method);
+		delegate->invoke_impl = InitAndGetInterpreterDirectlyCallVirtualMethodPointer(method);
 		delegate->invoke_impl_this = target;
 	}
 

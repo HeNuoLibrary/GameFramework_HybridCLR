@@ -2,6 +2,7 @@
 #
 # Get latest from https://github.com/github/gitignore/blob/master/Unity.gitignore
 #
+/[Aa]ssetBundle/
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
@@ -14,7 +15,8 @@
 /[Hh]ybridCLRData/[Aa]ssembliesPostIl2CppStrip/
 /[Hh]ybridCLRData/[Hh]otFixDlls/
 /[Hh]ybridCLRData/[Hh]otUpdateDlls/
-/[Hh]ybridCLRData/[Ll]ocalIl2CppData-WindowsEditor
+/[Hh]ybridCLRData/[Ll]ocalIl2CppData-WindowsEditor/
+/[Hh]ybridCLRData/[Ss]trippedAOTDllsTempProj/
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data

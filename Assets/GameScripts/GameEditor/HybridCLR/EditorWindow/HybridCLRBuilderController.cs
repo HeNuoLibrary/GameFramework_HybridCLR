@@ -18,37 +18,31 @@ namespace HybridCLR.Builder
             // Build Hotfix Dll
             CompileDllCommand.CompileDll(buildTarget);
 
-            // Copy Hotfix Dll
-            string hotfixDllSrcDir = SettingsUtil.GetHotUpdateDllsOutputDirByTarget(buildTarget);//dll 输出路径
-            string HotfixDllPath = $"{Application.dataPath}/GameMain/HotFixDll";
-            foreach (var dll in SettingsUtil.HotUpdateAssemblyFiles)
+            // Copy AOT -->BuildAssetsCommand.CopyAOTAssembliesToStreamingAssets()
+            string aotAssembliesSrcDir = SettingsUtil.GetAssembliesPostIl2CppStripDir(buildTarget);//AOT 路径
+            string aotAssembliesDstDir = $"{Application.dataPath}/GameMain/HotAssemblies/AOT";
+            foreach (var dll in SettingsUtil.AOTAssemblyNames)
             {
-                string dllPath = $"{hotfixDllSrcDir}/{dll}";
-                string dllBytesPath = $"{HotfixDllPath}/{dll}.bytes";
-                File.Copy(dllPath, dllBytesPath, true);
-                Debug.Log($"[BuildAssetBundles] copy hotfix dll {dllPath} -> {dllBytesPath}");
-            }
-
-            // Copy AOT Dll
-            string aotDllDir = SettingsUtil.GetAssembliesPostIl2CppStripDir(buildTarget);
-            //HotUpdateAssemblyManifest manifest = Resources.Load<HotUpdateAssemblyManifest>("HotUpdateAssemblyManifest");
-            HotUpdateAssemblyManifest manifest = AssetDatabase.LoadAssetAtPath<HotUpdateAssemblyManifest>("Assets/GameMain/HotFixDll/HotUpdateAssemblyManifest.asset");
-
-            if (manifest == null)
-            {
-                throw new Exception($"asset:{nameof(HotUpdateAssemblyManifest)} 配置不存在，请在Assets/GameMain/HotFixDll/目录下创建");
-            }
-            foreach (var dll in manifest.AOTMetadataDlls)
-            {
-                string dllPath = $"{aotDllDir}/{dll}.dll";
-                if (!File.Exists(dllPath))
+                string srcDllPath = $"{aotAssembliesSrcDir}/{dll}.dll";
+                if (!File.Exists(srcDllPath))
                 {
-                    Debug.LogError($"ab中添加AOT补充元数据dll:{dllPath} 时发生错误,文件不存在。裁剪后的AOT dll在BuildPlayer时才能生成，因此需要你先构建一次游戏App后再打包。");
+                    Debug.LogError($"ab中添加AOT补充元数据dll:{srcDllPath} 时发生错误,文件不存在。裁剪后的AOT dll在BuildPlayer时才能生成，因此需要你先构建一次游戏App后再打包。");
                     continue;
                 }
-                string dllBytesPath = $"{HotfixDllPath}/{dll}.bytes";
+                string dllBytesPath = $"{aotAssembliesDstDir}/{dll}.dll.bytes";
+                File.Copy(srcDllPath, dllBytesPath, true);
+                Debug.Log($"[CopyAOTAssembliesTo GameMain/HotAssemblies/AOT] copy AOT dll {srcDllPath} -> {dllBytesPath}");
+            }
+
+            // Copy Hotfix Dll -->BuildAssetsCommand.CopyHotUpdateAssembliesToStreamingAssets()
+            string hotfixDllSrcDir = SettingsUtil.GetHotUpdateDllsOutputDirByTarget(buildTarget);// 热更 dll 路径
+            string hotfixAssembliesDstDir = $"{Application.dataPath}/GameMain/HotAssemblies/HotDll";
+            foreach (var dll in SettingsUtil.HotUpdateAssemblyFilesExcludePreserved)
+            {
+                string dllPath = $"{hotfixDllSrcDir}/{dll}";
+                string dllBytesPath = $"{hotfixAssembliesDstDir}/{dll}.bytes";
                 File.Copy(dllPath, dllBytesPath, true);
-                Debug.Log($"[BuildAssetBundles] copy AOT dll {dllPath} -> {dllBytesPath}");
+                Debug.Log($"[CopyHotUpdateAssembliesTo GameMain/HotAssemblies/HotDll] copy hotfix dll {dllPath} -> {dllBytesPath}");
             }
 
             AssetDatabase.SaveAssets();

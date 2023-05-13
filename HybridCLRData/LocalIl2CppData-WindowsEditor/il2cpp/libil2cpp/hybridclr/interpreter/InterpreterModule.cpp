@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "vm/GlobalMetadata.h"
+#include "vm/MetadataCache.h"
 #include "vm/MetadataLock.h"
 #include "vm/Class.h"
 #include "vm/Object.h"
@@ -12,6 +13,7 @@
 
 #include "../metadata/MetadataModule.h"
 #include "../metadata/MetadataUtil.h"
+#include "../metadata/InterpreterImage.h"
 #include "../transform/Transform.h"
 
 #include "MethodBridge.h"
@@ -82,9 +84,14 @@ namespace hybridclr
 			}
 		}
 
-		static void NotSupportNative2Managed()
+		void InterpreterModule::NotSupportNative2Managed()
 		{
 			il2cpp::vm::Exception::Raise(il2cpp::vm::Exception::GetExecutionEngineException("NotSupportNative2Managed"));
+		}
+
+		void InterpreterModule::NotSupportAdjustorThunk()
+		{
+			il2cpp::vm::Exception::Raise(il2cpp::vm::Exception::GetExecutionEngineException("NotSupportAdjustorThunk"));
 		}
 
 		static void* NotSupportInvoke(Il2CppMethodPointer, const MethodInfo* method, void*, void**)
@@ -111,7 +118,7 @@ namespace hybridclr
 			char sigName[1000];
 			ComputeSignature(method, !forceStatic, sigName, sizeof(sigName) - 1);
 			auto it = g_native2manageds.find(sigName);
-			return it != g_native2manageds.end() ? it->second : NotSupportNative2Managed;
+			return it != g_native2manageds.end() ? it->second : InterpreterModule::NotSupportNative2Managed;
 		}
 
 		template<typename T>
@@ -120,7 +127,7 @@ namespace hybridclr
 			char sigName[1000];
 			ComputeSignature(method, !forceStatic, sigName, sizeof(sigName) - 1);
 			auto it = g_adjustThunks.find(sigName);
-			return it != g_adjustThunks.end() ? it->second : NotSupportNative2Managed;
+			return it != g_adjustThunks.end() ? it->second : InterpreterModule::NotSupportAdjustorThunk;
 		}
 
 		static void RaiseMethodNotSupportException(const MethodInfo* method, const char* desc)
@@ -158,7 +165,7 @@ namespace hybridclr
 			return GetNativeAdjustMethodMethod(method, false);
 		}
 
-		void Managed2NativeCallByReflectionInvoke(const MethodInfo* method, uint16_t* argVarIndexs, StackObject* localVarBase, void* ret)
+		void InterpreterModule::Managed2NativeCallByReflectionInvoke(const MethodInfo* method, uint16_t* argVarIndexs, StackObject* localVarBase, void* ret)
 		{
 			if (hybridclr::metadata::IsInterpreterImplement(method))
 			{
@@ -206,6 +213,10 @@ namespace hybridclr
 			{
 				thisPtr = localVarBase[argVarIndexs[0]].obj;
 				argVarIndexBase = argVarIndexs + 1;
+				if (IS_CLASS_VALUE_TYPE(method->klass))
+				{
+					thisPtr = (Il2CppObject*)thisPtr - 1;
+				}
 			}
 			else
 			{
@@ -282,12 +293,13 @@ namespace hybridclr
 	}
 
 #ifdef HYBRIDCLR_UNITY_2021_OR_NEW
-	static void InterpterInvoke(Il2CppMethodPointer, const MethodInfo* method, void* __this, void** __args, void* __ret)
+	static void InterpterInvoke(Il2CppMethodPointer methodPointer, const MethodInfo* method, void* __this, void** __args, void* __ret)
 	{
 		bool isInstanceMethod = metadata::IsInstanceMethod(method);
 		StackObject args[256];
 		if (isInstanceMethod)
 		{
+			__this = (Il2CppObject*)__this + (methodPointer != method->methodPointerCallByInterp);
 			args[0].ptr = __this;
 		}
 		ConvertInvokeArgs(args + isInstanceMethod, method, __args);
@@ -333,7 +345,7 @@ namespace hybridclr
 			case -1:
 			{
 				IL2CPP_ASSERT(!hybridclr::metadata::IsInstanceMethod(curMethod));
-				void** newArgs = (void**)malloc(sizeof(void*) * (size_t)curMethod->parameters_count);
+				void** newArgs = (void**)alloca(sizeof(void*) * (size_t)curMethod->parameters_count);
 				newArgs[0] = curTarget;
 				for (int k = 0, endK = curMethod->parameters_count; k < endK; k++)
 				{
@@ -362,13 +374,13 @@ namespace hybridclr
 		}
 	}
 #else
-	static void* InterpterInvoke(Il2CppMethodPointer, const MethodInfo* method, void* __this, void** __args)
+	static void* InterpterInvoke(Il2CppMethodPointer methodPointer, const MethodInfo* method, void* __this, void** __args)
 	{
 		StackObject args[256];
 		bool isInstanceMethod = metadata::IsInstanceMethod(method);
 		if (isInstanceMethod)
 		{
-			__this = (Il2CppObject*)__this + IS_CLASS_VALUE_TYPE(((Il2CppObject*)__this)->klass);
+			__this = (Il2CppObject*)__this + (methodPointer != method->methodPointerCallByInterp);
 			args[0].ptr = __this;
 		}
 		ConvertInvokeArgs(args + isInstanceMethod, method, __args);
@@ -425,7 +437,7 @@ namespace hybridclr
 			case -1:
 			{
 				IL2CPP_ASSERT(!hybridclr::metadata::IsInstanceMethod(curMethod));
-				void** newArgs = (void**)malloc(sizeof(void*) * (size_t)curMethod->parameters_count);
+				void** newArgs = (void**)alloca(sizeof(void*) * (size_t)curMethod->parameters_count);
 				newArgs[0] = curTarget;
 				for (int k = 0, endK = curMethod->parameters_count; k < endK; k++)
 				{
@@ -471,15 +483,20 @@ namespace hybridclr
 		return !klass || !metadata::IsChildTypeOfMulticastDelegate(klass) || strcmp(method->name, "Invoke") ? InterpterInvoke : InterpreterDelegateInvoke;
 	}
 
+	bool InterpreterModule::IsImplementsByInterpreter(const MethodInfo* method)
+	{
+		return method->invoker_method == InterpreterDelegateInvoke || method->invoker_method == InterpterInvoke;
+	}
+
 	InterpMethodInfo* InterpreterModule::GetInterpMethodInfo(const MethodInfo* methodInfo)
 	{
+		RuntimeInitClassCCtor(methodInfo);
 		il2cpp::os::FastAutoLock lock(&il2cpp::vm::g_MetadataLock);
 
 		if (methodInfo->interpData)
 		{
 			return (InterpMethodInfo*)methodInfo->interpData;
 		}
-		RuntimeInitClassCCtor(methodInfo);
 		IL2CPP_ASSERT(methodInfo->isInterpterImpl);
 
 		metadata::Image* image = metadata::IsInterpreterMethod(methodInfo) ? hybridclr::metadata::MetadataModule::GetImage(methodInfo->klass)
@@ -490,7 +507,7 @@ namespace hybridclr
 		metadata::MethodBody* methodBody = image->GetMethodBody(methodInfo->token);
 		if (methodBody == nullptr || methodBody->ilcodes == nullptr)
 		{
-			TEMP_FORMAT(errMsg, "%s.%s::%s method body is null. not support external method currently.", methodInfo->klass->namespaze, methodInfo->klass->name, methodInfo->name);
+			TEMP_FORMAT(errMsg, "Method body is null. %s.%s::%s", methodInfo->klass->namespaze, methodInfo->klass->name, methodInfo->name);
 			il2cpp::vm::Exception::Raise(il2cpp::vm::Exception::GetExecutionEngineException(errMsg));
 		}
 		InterpMethodInfo* imi = new (IL2CPP_MALLOC_ZERO(sizeof(InterpMethodInfo))) InterpMethodInfo;

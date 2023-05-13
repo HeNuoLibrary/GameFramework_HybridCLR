@@ -221,11 +221,16 @@ namespace Reflection
         return arr;
     }
 
+    static std::string GetAssemblyPath(const Il2CppAssembly* assembly)
+    {
+        std::string executableDirectory = os::Path::GetApplicationFolder();
+        std::replace(executableDirectory.begin(), executableDirectory.end(), '\\', '/');
+        return utils::StringUtils::Printf("%s/%s.dll", executableDirectory.c_str(), assembly->aname.name);
+    }
+
     Il2CppString* RuntimeAssembly::get_code_base(Il2CppReflectionAssembly* assembly, bool escaped)
     {
-        std::string executableDirectory = utils::PathUtils::DirectoryName(os::Path::GetExecutablePath());
-        std::replace(executableDirectory.begin(), executableDirectory.end(), '\\', '/');
-        return vm::String::New(utils::StringUtils::Printf("file://%s/%s.dll", executableDirectory.c_str(), assembly->assembly->aname.name).c_str());
+        return vm::String::New(utils::StringUtils::Printf("file://%s", GetAssemblyPath(assembly->assembly).c_str()).c_str());
     }
 
     Il2CppString* RuntimeAssembly::get_fullname(Il2CppReflectionAssembly* assembly)
@@ -233,11 +238,17 @@ namespace Reflection
         return vm::String::New(vm::AssemblyName::AssemblyNameToString(assembly->assembly->aname).c_str());
     }
 
-    Il2CppString* RuntimeAssembly::get_location(Il2CppObject* thisPtr)
+#if HYBRIDCLR_UNITY_VERSION >= 20210314
+    Il2CppString* RuntimeAssembly::get_location(Il2CppReflectionAssembly* assembly)
     {
-        IL2CPP_NOT_IMPLEMENTED_ICALL_NO_ASSERT(Assembly::get_location, "Assembly::get_location is not functional on il2cpp");
-        return vm::String::New("");
+        return vm::String::New(GetAssemblyPath(assembly->assembly).c_str());
     }
+#else
+    Il2CppString* RuntimeAssembly::get_location(Il2CppObject* assembly)
+    {
+        return vm::String::New(GetAssemblyPath(((Il2CppReflectionAssembly*)assembly)->assembly).c_str());
+    }
+#endif
 
     Il2CppString* RuntimeAssembly::InternalImageRuntimeVersion(Il2CppObject* a)
     {

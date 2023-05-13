@@ -11,6 +11,7 @@
 #include "vm/Image.h"
 #include "vm/Class.h"
 #include "vm/String.h"
+#include "vm/MetadataLock.h"
 
 #include "Image.h"
 #include "MetadataModule.h"
@@ -23,62 +24,7 @@ namespace metadata
 
     std::vector<Il2CppAssembly*> s_placeHolderAssembies;
 
-
-
-    bool GetMappedFileBuffer(const char* assemblyFile, void*& buf, uint64_t& fileLength)
-    {
-        int err = 0;
-        il2cpp::os::FileHandle* fh = il2cpp::os::File::Open(assemblyFile, FileMode::kFileModeOpen, FileAccess::kFileAccessRead, FileShare::kFileShareReadWrite, 0, &err);
-
-        if (err != 0)
-        {
-            return false;
-        }
-
-        fileLength = il2cpp::os::File::GetLength(fh, &err);
-        if (err != 0)
-        {
-            il2cpp::os::File::Close(fh, &err);
-            return false;
-        }
-
-        buf = il2cpp::utils::MemoryMappedFile::Map(fh);
-
-        il2cpp::os::File::Close(fh, &err);
-        if (err != 0)
-        {
-            il2cpp::utils::MemoryMappedFile::Unmap(buf);
-            buf = NULL;
-            return false;
-        }
-        return true;
-    }
-
 #if ENABLE_PLACEHOLDER_DLL == 1
-    static const char* s_ignorePlaceHolderDlls[] =
-    {
-        //"UnityEngine.",
-        //"Unity.",
-        "WindowsRuntimeMetadata.dll",
-        nullptr,
-    };
-
-    static bool NeedCreatePlaceHolderDll(const char* assemblyName)
-    {
-        // if assemblyName is path
-        if (std::strstr(assemblyName, "/") || std::strstr(assemblyName, "\\"))
-        {
-            return false;
-        }
-        for (const char** ignoreDll = s_ignorePlaceHolderDlls; *ignoreDll; ignoreDll++)
-        {
-            if (std::strstr(assemblyName, *ignoreDll))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
 
     static const char* CreateAssemblyNameWithoutExt(const char* assemblyName)
     {
@@ -127,34 +73,40 @@ namespace metadata
     }
 #endif
 
-    Il2CppAssembly* Assembly::LoadFromFile(const char* assemblyFile)
+    void Assembly::InitializePlaceHolderAssemblies()
     {
-        void* fileBuffer;
-        uint64_t fileLength;
-        if (!GetMappedFileBuffer(assemblyFile, fileBuffer, fileLength))
+        for (const char** ptrPlaceHolderName = g_placeHolderAssemblies; *ptrPlaceHolderName; ++ptrPlaceHolderName)
         {
-
-#if ENABLE_PLACEHOLDER_DLL == 1
-            if (!NeedCreatePlaceHolderDll(assemblyFile))
-            {
-                return nullptr;
-            }
-            return CreatePlaceHolderAssembly(assemblyFile);
-#else
-            return nullptr;
-#endif
+            const char* nameWithExtension = ConcatNewString(*ptrPlaceHolderName, ".dll");
+            Il2CppAssembly* placeHolderAss = CreatePlaceHolderAssembly(nameWithExtension);
+            IL2CPP_FREE((void*)nameWithExtension);
+            il2cpp::vm::MetadataCache::RegisterInterpreterAssembly(placeHolderAss);
         }
+    }
 
-        return LoadFromBytes((const byte*)fileBuffer, fileLength, false);
+    static void RunModuleInitializer(Il2CppImage* image)
+    {
+        Il2CppClass* moduleKlass = il2cpp::vm::Image::ClassFromName(image, "", "<Module>");
+        if (!moduleKlass)
+        {
+            return;
+        }
+        il2cpp::vm::Runtime::ClassInit(moduleKlass);
     }
 
     Il2CppAssembly* Assembly::LoadFromBytes(const void* assemblyData, uint64_t length, bool copyData)
     {
-        return Create((const byte*)assemblyData, length, copyData);
+        Il2CppAssembly* ass = Create((const byte*)assemblyData, length, copyData);
+        if (ass)
+        {
+            RunModuleInitializer(ass->image);
+        }
+        return ass;
     }
 
     Il2CppAssembly* Assembly::Create(const byte* assemblyData, uint64_t length, bool copyData)
     {
+        il2cpp::os::FastAutoLock lock(&il2cpp::vm::g_MetadataLock);
         if (!assemblyData)
         {
             il2cpp::vm::Exception::Raise(il2cpp::vm::Exception::GetArgumentNullException("rawAssembly is null"));
@@ -216,7 +168,6 @@ namespace metadata
         image2->assembly = ass;
 
         image->InitRuntimeMetadatas();
-
         return ass;
     }
 }

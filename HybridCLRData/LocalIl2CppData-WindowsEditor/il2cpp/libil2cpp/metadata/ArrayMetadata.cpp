@@ -101,7 +101,7 @@ namespace metadata
     static GenericArrayMethods s_GenericArrayMethods;
 
     static size_t GetArrayGenericMethodsCount();
-    static void PopulateArrayGenericMethods(Il2CppClass* klass, uint16_t offset, const GenericArrayMethods& genericArrayMethods);
+    static void PopulateArrayGenericMethods(Il2CppClass* klass, uint16_t offset);
 
     static void CollectImplicitArrayInterfaces(Il2CppClass* elementClass, ::std::vector<Il2CppClass*>& interfaces);
 
@@ -147,7 +147,7 @@ namespace metadata
         arrayClass->methods[methodIndex++] = ConstructArrayMethod(arrayClass, "Get", &arrayClass->element_class->byval_arg, rank, parameters);
 
         IL2CPP_ASSERT(methodIndex <= std::numeric_limits<uint16_t>::max());
-        PopulateArrayGenericMethods(arrayClass, static_cast<uint16_t>(methodIndex), s_GenericArrayMethods);
+        PopulateArrayGenericMethods(arrayClass, static_cast<uint16_t>(methodIndex));
     }
 
     static void CollectImplicitArrayInterfacesFromElementClass(Il2CppClass* elementClass, ::std::vector<Il2CppClass*>& interfaces)
@@ -196,10 +196,10 @@ namespace metadata
 
 // note assuming list is ordered as IList, ICollection, IEnumerable
 
-    static void CollectGenericArrayMethods(GenericArrayMethods& genericArrayMethods)
+    static void CollectGenericArrayMethods()
     {
         const size_t kNumGenericArrayMethods = 13;
-        genericArrayMethods.reserve(kNumGenericArrayMethods);
+        s_GenericArrayMethods.reserve(kNumGenericArrayMethods);
 
         void* iter = NULL;
         while (const MethodInfo* method = Class::GetMethods(il2cpp_defaults.array_class, &iter))
@@ -254,8 +254,8 @@ namespace metadata
 
             if (matchingInterfacesMethod != NULL)
             {
-                GenericArrayMethod generiArrayMethod = { StringUtils::StringDuplicate(name.c_str()), method, matchingInterfacesMethod };
-                genericArrayMethods.push_back(generiArrayMethod);
+                GenericArrayMethod genericArrayMethod = { StringUtils::StringDuplicate(name.c_str()), method, matchingInterfacesMethod };
+                s_GenericArrayMethods.push_back(genericArrayMethod);
             }
         }
     }
@@ -263,7 +263,7 @@ namespace metadata
     static size_t GetArrayGenericMethodsCount()
     {
         if (s_GenericArrayMethods.size() == 0)
-            CollectGenericArrayMethods(s_GenericArrayMethods);
+            CollectGenericArrayMethods();
 
         return s_GenericArrayMethods.size();
     }
@@ -296,7 +296,7 @@ namespace metadata
         return inflatedMethod;
     }
 
-    static void PopulateArrayGenericMethods(Il2CppClass* klass, uint16_t offset, const GenericArrayMethods& genericArrayMethods)
+    static void PopulateArrayGenericMethods(Il2CppClass* klass, uint16_t offset)
     {
         for (int i = 0; i < klass->interface_offsets_count; i++)
         {
@@ -309,7 +309,7 @@ namespace metadata
             Il2CppGenericContext context = { 0 };
             context.method_inst = MetadataCache::GetGenericInst(&interfaceType->generic_class->context.class_inst->type_argv[0], 1);
 
-            for (GenericArrayMethods::const_iterator iter = genericArrayMethods.begin(); iter != genericArrayMethods.end(); ++iter)
+            for (GenericArrayMethods::const_iterator iter = s_GenericArrayMethods.begin(); iter != s_GenericArrayMethods.end(); ++iter)
             {
                 if (iter->interfaceMethodDefinition->klass != interfaceDefinition)
                     continue;
@@ -383,29 +383,7 @@ namespace metadata
     {
         Il2CppClass *elementType = arrayType->element_class;
 
-        if (elementType->enumtype)
-            arrayType->castClass = elementType->element_class;
-        else
-            arrayType->castClass = elementType;
-
-        if (arrayType->castClass == il2cpp_defaults.sbyte_class)
-            arrayType->castClass = il2cpp_defaults.byte_class;
-        else if (arrayType->castClass == il2cpp_defaults.uint16_class)
-            arrayType->castClass = il2cpp_defaults.int16_class;
-        else if (arrayType->castClass == il2cpp_defaults.uint32_class)
-            arrayType->castClass = il2cpp_defaults.int32_class;
-        else if (arrayType->castClass == il2cpp_defaults.uint64_class)
-            arrayType->castClass = il2cpp_defaults.int64_class;
-#if IL2CPP_SIZEOF_VOID_P == 8
-        else if (arrayType->castClass == il2cpp_defaults.int_class ||
-                 arrayType->castClass == il2cpp_defaults.uint_class)
-            arrayType->castClass = il2cpp_defaults.int64_class;
-#else
-        else if (arrayType->castClass == il2cpp_defaults.int_class ||
-                 arrayType->castClass == il2cpp_defaults.uint_class)
-            arrayType->castClass = il2cpp_defaults.int32_class;
-#endif
-
+        arrayType->castClass = ArrayMetadata::GetArrayVarianceReducedType(elementType);
         arrayType->has_references = Type::IsReference(&elementType->byval_arg) || elementType->has_references;
     }
 
@@ -484,6 +462,11 @@ namespace metadata
     {
         s_SZArrayClassMap.Clear();
         s_ArrayClassMap.Clear();
+
+        for (auto genericArrayMethod : s_GenericArrayMethods)
+            IL2CPP_FREE((void*)genericArrayMethod.name);
+
+        s_GenericArrayMethods.clear();
     }
 
     static Il2CppClass* FindBoundedArrayClass(Il2CppClass* elementClass, uint32_t rank, bool bounded)
@@ -561,6 +544,7 @@ namespace metadata
         klass->size_inited = true; // set only after instance_size and has_references are set
 
         klass->element_class = elementClass;
+        SetupCastClass(klass);
 
         if (rank > 1 || bounded)
         {
